@@ -42,5 +42,6 @@
 - [ADR-0021：同产品凭证回退——多凭证切换与「每笔唯一归属」的兼容设计（Proposed，待所有者拍板）](0021-same-product-credential-failover.md)
 - [ADR-0023：请求侧可选改造①——prompt 缓存断点自动注入（Proposed，待所有者拍板；opt-in 按 Key，见 issue #769）](0023-request-side-cache-breakpoint-injection.md)
 - [ADR-0026：速率限流（TPM/RPM）评估与决策留档（Proposed，待所有者拍板；选项 D「只告警」已作为观测一期交付：issue #706 / PR #1016，A/B/C 未动）](0026-rate-limiting-evaluation.md)
+- [ADR-0028：MCP 上游身份透传——网关注入可信调用者身份（Proposed，待所有者拍板；接入 slurm-skill 触发，信任模型 C/B/D 待选）](0028-mcp-upstream-identity-passthrough.md)
 
 - （非独立提案）ADR-0024 的二期选项 C/D/E：正文已「部分 Accepted」，二期未拍板——按文件 §3 的触发条件、等一期观察数据支持。
