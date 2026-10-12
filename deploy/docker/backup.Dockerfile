@@ -3,7 +3,7 @@
 # deploy/backup scripts. Schedule lives in backup-entrypoint.sh (daily 02:00,
 # TZ-driven). Build context is the repository root:
 #   docker build -f deploy/docker/backup.Dockerfile .
-FROM postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+FROM postgres:17-alpine
 RUN apk add --no-cache openssl curl tzdata
 COPY deploy/backup/ /opt/miqrokey/backup/
 COPY deploy/docker/backup-entrypoint.sh /usr/local/bin/backup-entrypoint.sh

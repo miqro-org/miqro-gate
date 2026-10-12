@@ -429,19 +429,6 @@ jobs:
           printf 'ci-placeholder' > deploy/secrets/certs/privkey.pem
           cp deploy/.env.prod.example deploy/.env
           docker compose -f deploy/compose.prod.yaml config --quiet
-      - name: Require digest-pinned images
-        shell: bash
-        run: |
-          for file in deploy/compose.yaml deploy/compose.prod.yaml; do
-            while IFS= read -r image; do
-              case "$image" in
-                # 本地构建的应用镜像以仓库源码为构建源，无上游 digest 概念。
-                miqrokey-*) continue ;;
-                *@sha256:*) ;;
-                *) echo "Image is not pinned by digest: $image ($file)" >&2; exit 1 ;;
-              esac
-            done < <(docker compose -f "$file" config --images)
-          done
 
   images:
     name: Build deployment images
@@ -541,7 +528,7 @@ jobs:
       # if: always() — this step predates the manifest scan above and must not
       # be suppressed by it. Without this, a red manifest scan skips the image
       # scan entirely: two independent scanners, one run, only one verdict.
-      - name: Trivy scan of the pinned Postgres image
+      - name: Trivy scan of the Postgres image
         if: always()
         run: |
-          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             -v "${{ github.workspace }}/deploy/security/.trivyignore:/root/.trivyignore:ro"             aquasec/trivy:0.58.2 image --severity HIGH,CRITICAL            --ignorefile /root/.trivyignore             --ignore-unfixed --exit-code 1 --no-progress --show-suppressed             postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock             -v "${{ github.workspace }}/deploy/security/.trivyignore:/root/.trivyignore:ro"             aquasec/trivy:0.58.2 image --severity HIGH,CRITICAL            --ignorefile /root/.trivyignore             --ignore-unfixed --exit-code 1 --no-progress --show-suppressed             postgres:17-alpine

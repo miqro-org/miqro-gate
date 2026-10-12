@@ -1,6 +1,8 @@
 # G6.3 (2026-08-26): Postgres image scan exemptions, each with rationale.
-# Review EVERY entry when the image digest is next upgraded (see
-# deploy/compose.yaml) — drop the entries that no longer apply.
+# The image now floats on postgres:17-alpine (see deploy/compose.yaml), so there
+# is no digest-refresh event to hang the review on: re-check EVERY entry against
+# the Security gate's suppressed list periodically and drop the ones that no
+# longer hit.
 #
 # OpenSSL QUIC-server memory-growth DoS (libcrypto3/libssl3 3.5.7-r0,
 # fixed 3.5.8-r0): Postgres serves TCP TLS, never QUIC, so the vulnerable

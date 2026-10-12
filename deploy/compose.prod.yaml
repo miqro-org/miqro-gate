@@ -17,7 +17,7 @@ services:
   # 一次性密钥同步：master/vk-hmac/bootstrap 严格 0400（FileSecretProvider 强制）；db_password/
   # backup_key 0440 属主 10001:70（应用 uid 10001 与备份容器 postgres uid 70 均可读）。
   secrets-init:
-    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    image: postgres:17-alpine
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -35,7 +35,7 @@ services:
     networks: [internal]
 
   postgres:
-    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    image: postgres:17-alpine
     restart: unless-stopped
     # 小规格宿主实测（2026-09-16 2G 演示机）：库小（~135MB）时 64M 足够；共享内存不可回收，
     # 调小后余量转为可回收内核页缓存。大库用 POSTGRES_SHARED_BUFFERS 放大。
