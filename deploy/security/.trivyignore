@@ -70,3 +70,15 @@ CVE-2026-53614
 CVE-2026-76642
 CVE-2026-78408
 CVE-2026-78410
+#
+# 2026-10-12: gosu's bundled Go stdlib (go1.24.6 in the pinned image) picked up
+# three new HIGH DoS advisories that the gosu block above does not yet cover —
+# net/http Range-header DoS, http2 SETTINGS DoS, crypto/tls ECH DoS. Same
+# rationale as the gosu block: /usr/local/bin/gosu is the entrypoint su-wrapper,
+# it serves no HTTP or TLS, and its stdlib is not reachable from untrusted
+# input. The upstream fix is a gosu rebuild against go1.26.9 / 1.27.2, i.e. it
+# rides along with the next official postgres:17.6-alpine digest — DROP these
+# entries at that refresh, same as the sections above.
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
