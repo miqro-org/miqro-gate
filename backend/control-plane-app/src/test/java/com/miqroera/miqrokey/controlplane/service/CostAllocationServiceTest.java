@@ -115,6 +115,29 @@ class CostAllocationServiceTest {
     }
 
     @Test
+    void allocateSplitsFixedCostEvenlyWhenNoTokenIsKnownForAnyProject() {
+        when(subscriptionRepository.findById(SUBSCRIPTION_ID)).thenReturn(Optional.of(subscription()));
+        // Usage rows exist but every token column is NULL: getLong yields 0 for
+        // both projects, so the token weight is undefined (usage_missing=true).
+        doAnswer(inv -> {
+            RowCallbackHandler handler = inv.getArgument(2);
+            handler.processRow(row(PROJECT_A, PRODUCT_ID, MODEL, 0L, 0L));
+            handler.processRow(row(PROJECT_B, PRODUCT_ID, MODEL, 0L, 0L));
+            return null;
+        }).when(jdbc).query(anyString(), any(MapSqlParameterSource.class), any(RowCallbackHandler.class));
+
+        List<CostAllocation> rows = service.allocate(TENANT, SUBSCRIPTION_ID, from, to);
+
+        assertThat(rows).hasSize(2);
+        // Fixed cost 100 prorated to the full period = 100, split evenly because
+        // no token information is available to weight it; dropping it instead
+        // would make the allocated total silently smaller than the price.
+        assertThat(rows).allSatisfy(r -> assertThat(r.fixedCost()).isEqualByComparingTo("50.00"));
+        assertThat(rows.stream().map(CostAllocation::fixedCost).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo("100.00");
+    }
+
+    @Test
     void allocateReturnsEmptyWhenNoUsageAndWritesNothing() {
         when(subscriptionRepository.findById(SUBSCRIPTION_ID)).thenReturn(Optional.of(subscription()));
         // Void query: default behavior is no rows.

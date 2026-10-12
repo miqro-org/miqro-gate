@@ -150,6 +150,8 @@ project_allocated_cost
 
 缓存、输入、输出 Token 是否使用不同权重由算法版本控制。首版使用总 Token 等权重，避免引入未经确认的复杂规则。结果标记 `INTERNAL_ALLOCATION`。
 
+分母为 0 的情形单独规定：当窗口内**没有任何项目有已知 Token**（用量事件存在但 token 列全为 NULL，即 `usage_missing=true`）时权重无定义，此时固定成本在项目间**均分**——不产出这一份额会让「已分摊总额」静默小于订阅价。上面的公式对分母为 0 没有别的规则，均分是选定的口径。
+
 团队 Plan 可以同时生成：
 
 - Subscription 总成本；

@@ -87,8 +87,7 @@ public class CostAllocationService {
 
         List<CostAllocation> rows = new ArrayList<>(usage.size());
         for (ProjectAllocation project : usage) {
-            BigDecimal fixedShare = fixedCost.multiply(BigDecimal.valueOf(project.tokens()))
-                    .divide(BigDecimal.valueOf(totalTokens), 10, RoundingMode.HALF_UP);
+            BigDecimal fixedShare = fixedCostShare(fixedCost, project.tokens(), totalTokens, usage.size());
             rows.add(allocationRepository
                     .upsert(new CostAllocation(UUID.randomUUID(), tenantId, subscriptionId, periodStart, periodEnd,
                             CostAllocationTargetType.PROJECT, project.projectId(), fixedShare, project.cost(),
@@ -184,6 +183,23 @@ public class CostAllocationService {
                 .divide(BigDecimal.valueOf(subDays), 10, RoundingMode.HALF_UP);
     }
 
+    /**
+     * One project's share of the period's fixed cost, weighted by its token share
+     * (usage-accounting §7.3). Total tokens can be zero while usage rows exist:
+     * events whose token columns are all NULL — the supported {@code usage_missing}
+     * state — sum to 0, and the weight is then undefined. The cost is split evenly
+     * in that case rather than left unallocated, because dropping it would make the
+     * allocated total silently smaller than the subscription price. §7.3 states no
+     * rule for a zero denominator; this is the chosen one.
+     */
+    private static BigDecimal fixedCostShare(BigDecimal fixedCost, long tokens, long totalTokens, int projects) {
+        if (totalTokens == 0) {
+            return fixedCost.divide(BigDecimal.valueOf(projects), 10, RoundingMode.HALF_UP);
+        }
+        return fixedCost.multiply(BigDecimal.valueOf(tokens)).divide(BigDecimal.valueOf(totalTokens), 10,
+                RoundingMode.HALF_UP);
+    }
+
     /** Metered cost of one project's usage at the latest price snapshots. */
     private BigDecimal usageCost(UsageRow row) {
         BigDecimal inputPrice = price(row.productId(), row.modelId(), PriceTokenType.INPUT);
@@ -197,6 +213,10 @@ public class CostAllocationService {
 
     /**
      * Latest price at now; zero when no snapshot exists (no-price models cost 0).
+     * Pricing the allocation from the row-level frozen base instead would change
+     * what "same algorithm version overwrites history" means — a separate decision
+     * that has deliberately not been switched yet (database-schema.md §
+     * cost_allocations; usage-accounting §6).
      */
     private BigDecimal price(UUID productId, String modelId, PriceTokenType type) {
         if (productId == null || modelId == null) {
