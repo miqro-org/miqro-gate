@@ -1,42 +1,46 @@
-Goal: Gx.y
+## 类型
 
-## Outcome
+<!-- 必选，勾一个 -->
+- [ ] 🐛 Bug 修复
+- [ ] ✨ 新功能
+- [ ] 📝 文档
+- [ ] ♻️ 重构
+- [ ] 🧪 测试
+- [ ] 🔧 其他
 
-- 实际完成的用户/系统结果。
+## 变更概述
 
-## Verification
+<!-- 必填，一句话 -->
 
-- [ ] Backend verify: `command` — PASS
-- [ ] Frontend lint/typecheck/test/build: `command` — PASS / N/A
-- [ ] Compose/config/migration checks: `command` — PASS / N/A
-- [ ] Documentation and local links checked
+## 背景/问题
 
-## Contract impact
+<!-- 必填。Bug：现象、根因、影响。Feature：需求背景、痛点 -->
 
-- API:
-- Database/Flyway:
-- Provider/Plan/protocol:
-- UI/visual baseline:
+## 关联 issue
 
-## Security and data impact
+<!-- 可选。本 PR 解决的 issue。写 `Closes #xxx` / `Fixes #xxx` / `Resolves #xxx` 会在 PR 合入 develop 后自动关闭对应 issue；裸 `#xxx` 只生成链接、不会自动关闭。无关联 issue 可整节删除 -->
+- Closes #xxx 功能描述
 
-- Secret handling:
-- Authorization/tenant isolation:
-- Prompt/response logging:
-- Usage/accounting/export:
+## 变更内容
 
-## Evidence
+<!-- 必填。列出关键改动文件和原因 -->
 
-- Test logs, screenshots, benchmark or provider verification report:
+## 日志/验证证据
 
-## Remaining risks
+<!-- 必填，不允许空白。Bug 必贴修复前后日志对比。Feature 必贴功能测试截图或终端输出 -->
+```
+（粘贴日志/截图）
+```
 
-- None / list concrete risks and follow-up Goal.
+## 测试情况
 
-## Agent checklist
+<!-- 必填。跑过哪些测试？结果？ -->
 
-- [ ] Only the declared Goal is included
-- [ ] `docs/progress.md` records exact results
-- [ ] No force push, history rewrite, hidden failing test or unapproved dependency
-- [ ] No real credential, customer content, dump or generated export is committed
+## 截图
 
+<!-- 必填。有 UI 变更贴截图，无则写"无需截图" -->
+
+## 后续计划
+
+<!-- 可选。关联的后续 issue（一个功能一个 issue，一个 issue 一个 PR） -->
+- #xxx 功能描述
