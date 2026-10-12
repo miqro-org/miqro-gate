@@ -66,10 +66,9 @@ class McpAccessLogIntegrationTest {
     private static final PostgreSQLContainer<?> POSTGRES;
 
     static {
-        POSTGRES = new PostgreSQLContainer<>(DockerImageName
-                .parse("postgres:17-alpine")
-                .asCompatibleSubstituteFor("postgres")).withDatabaseName("miqrokey_test").withUsername("miqrokey_test")
-                .withPassword("miqrokey_test");
+        POSTGRES = new PostgreSQLContainer<>(
+                DockerImageName.parse("postgres:17-alpine").asCompatibleSubstituteFor("postgres"))
+                .withDatabaseName("miqrokey_test").withUsername("miqrokey_test").withPassword("miqrokey_test");
         POSTGRES.start();
     }
 
