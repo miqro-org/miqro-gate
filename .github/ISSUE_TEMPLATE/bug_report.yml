@@ -1,0 +1,108 @@
+name: 🐛 Bug 报告
+description: 报告 Bug，必须附带日志和复现步骤
+title: "[BUG] "
+labels: [bug, "Triage Needed"]
+assignees: []
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 用一句话说清楚这是什么 Bug
+      placeholder: "例：同一 Virtual Key 的并发流式请求偶发 401"
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: |
+        请逐项填写，**不接受空白**。版本与部署方式是定位问题的前提。
+      placeholder: |
+        部署方式：Docker Compose
+        网关版本 / 前端版本：v0.1.0-rc.20 / v0.1.0-rc.20
+        OS / Java / Node / PostgreSQL：Windows 11 / Java 21 / Node 22 / PostgreSQL 16
+        浏览器（门户问题）：Chrome 130
+      value: |
+        （请逐项填写后删除本行）
+        部署方式：
+        网关版本 / 前端版本：
+        OS / Java / Node / PostgreSQL：
+        浏览器（门户问题）：
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从零开始的精确操作步骤，让维护者可以照做复现
+      placeholder: |
+        1. 用普通用户登录门户
+        2. 创建一个 purpose=CLAUDE_CODE 的 Virtual Key
+        3. 用该 Key 向 /v1/messages 发一条流式请求
+        4. 观察响应
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: input
+    id: frequency
+    attributes:
+      label: 复现频率
+      description: 必现 / 偶现 / 特定条件下必现
+      placeholder: "必现"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 正确情况应该怎样
+      placeholder: "请求正常流式返回，用量流水记到该 Virtual Key 名下"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 实际发生了什么
+      placeholder: "返回 401，网关日志显示密钥摘要未命中路由快照"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        粘贴完整的报错日志、堆栈信息、终端输出。**必须提供，不接受空白**。
+        注意脱敏：不要贴 API Key、Virtual Key、prompt、代码或模型回答正文。
+      placeholder: |
+        2026-10-12T10:00:00.000Z ERROR 1 --- [reactor-http-nio-2] com.miqroera.miqrokey.gateway.proxy :
+        java.lang.IllegalStateException: snapshot miss for key digest
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: 截图/录屏（可选）
+      description: 如果日志不足以说明问题，请附上截图或录屏链接
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息
+      description: 已排查过什么、相关 commit/PR、参考资料
+    validations:
+      required: false

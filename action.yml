@@ -1,0 +1,356 @@
+name: 'Issue Validator & AI Log Review'
+description: 'Validates bug report template completeness and uses AI to verify log authenticity'
+author: 'MiQroEra'
+branding:
+  icon: 'check-circle'
+  color: 'blue'
+
+inputs:
+  github-token:
+    description: 'GitHub token for API access'
+    required: true
+
+  ai-api-key:
+    description: 'API key for AI log review (DeepSeek or OpenAI compatible)'
+    required: false
+
+  ai-api-base:
+    description: 'API base URL'
+    required: false
+    default: 'https://api.deepseek.com'
+
+  ai-model:
+    description: 'Model name'
+    required: false
+    default: 'deepseek-chat'
+
+  skip-ai:
+    description: 'Set to "true" to skip AI log review'
+    required: false
+    default: 'false'
+
+  min-description:
+    description: 'Minimum characters for bug description section'
+    required: false
+    default: '10'
+
+  min-steps:
+    description: 'Minimum characters for reproduction steps section'
+    required: false
+    default: '10'
+
+  min-freq:
+    description: 'Minimum characters for frequency section'
+    required: false
+    default: '1'
+
+  min-logs:
+    description: 'Minimum characters for logs section'
+    required: false
+    default: '20'
+
+  feature-title-prefix:
+    description: 'Issue title prefix that skips validation (feature requests)'
+    required: false
+    default: '[FEATURE]'
+
+  incomplete-label:
+    description: 'Label applied when template is incomplete'
+    required: false
+    default: 'incomplete'
+
+  suspicious-label:
+    description: 'Label applied when AI suspects fake logs'
+    required: false
+    default: 'ai:logs-suspicious'
+
+  comment-bot-login:
+    description: 'Login of the account that posts the validation comments'
+    required: false
+    default: 'github-actions[bot]'
+
+outputs:
+  template-valid:
+    description: 'Whether template validation passed'
+    value: ${{ steps.template.outputs.valid }}
+
+runs:
+  using: 'composite'
+  steps:
+    # ─────────────────────────────────────────────────────────────
+    # Step 1: Template validation
+    # ─────────────────────────────────────────────────────────────
+    - name: Template validation
+      id: template
+      uses: actions/github-script@v7
+      env:
+        MIN_DESC: ${{ inputs.min-description }}
+        MIN_STEPS: ${{ inputs.min-steps }}
+        MIN_FREQ: ${{ inputs.min-freq }}
+        MIN_LOGS: ${{ inputs.min-logs }}
+        FEATURE_PREFIX: ${{ inputs.feature-title-prefix }}
+        INCOMPLETE_LABEL: ${{ inputs.incomplete-label }}
+        BOT_LOGIN: ${{ inputs.comment-bot-login }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const minDesc = parseInt(process.env.MIN_DESC || '10');
+          const minSteps = parseInt(process.env.MIN_STEPS || '10');
+          const minLogs = parseInt(process.env.MIN_LOGS || '20');
+          const minFreq = parseInt(process.env.MIN_FREQ || '1');
+          const featurePrefix = process.env.FEATURE_PREFIX || '[FEATURE]';
+          const incompleteLabel = process.env.INCOMPLETE_LABEL || 'incomplete';
+          const botLogin = process.env.BOT_LOGIN || 'github-actions[bot]';
+
+          let body = context.payload.issue.body || '';
+          body = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+          const withoutComments = body.replace(/<!--[\s\S]*?-->/g, '').trim();
+
+          const issueNumber = context.issue.number;
+          const repo = context.repo;
+
+          // Skip feature requests and enhancements
+          const labels = (context.payload.issue.labels || []).map(l => typeof l === 'string' ? l : l.name);
+          if (context.payload.issue.title?.startsWith(featurePrefix) || labels.includes('enhancement')) {
+            console.log('Feature request / enhancement — skipping template validation');
+            core.setOutput('valid', 'true');
+            return;
+          }
+
+          const failures = [];
+          const extract = (label) => {
+            const m = withoutComments.match(new RegExp('#{2,3} ' + label + '\\s*\\n+(.+?)(?=\\n#{2,3}|\\n*$)', 's'));
+            return m?.[1]?.trim() || '';
+          };
+
+          // 空白判定：GitHub 表单对空字段渲染 `_No response_`，直接提交空正文的
+          // issue 也可能照抄这个占位符——两者都不能算「已填写」。
+          const isBlank = (v) => !v || v.trim() === '' || v.trim() === '_No response_';
+
+          // 1. Description
+          {
+            const val = extract('Bug 描述');
+            if (isBlank(val)) {
+              failures.push(`Bug 描述：未填写`);
+            }
+          }
+
+          // 2. Environment
+          {
+            const val = extract('环境');
+            const stillDefault = val?.includes('（请逐项填写后删除本行）');
+            if (isBlank(val) || stillDefault) {
+              failures.push(`环境信息：未填写`);
+            }
+          }
+
+          // 3. Steps
+          {
+            const val = extract('复现步骤');
+            const actual = val?.split('\n').filter(l => l.replace(/^\d+\.\s*/, '').trim().length > 0).join('\n').trim();
+            if (isBlank(actual)) {
+              failures.push(`复现步骤：未填写`);
+            }
+          }
+
+          // 4. Frequency
+          {
+            const val = extract('复现频率');
+            if (isBlank(val)) {
+              failures.push(`复现频率：未填写`);
+            }
+          }
+
+          // 5. Expected behavior
+          {
+            const val = extract('期望行为');
+            if (isBlank(val)) {
+              failures.push(`期望行为：未填写`);
+            }
+          }
+
+          // 6. Actual behavior
+          {
+            const val = extract('实际行为');
+            if (isBlank(val)) {
+              failures.push(`实际行为：未填写`);
+            }
+          }
+
+          // 7. Logs
+          {
+            const val = extract('日志');
+            if (isBlank(val)) {
+              failures.push(`日志：未填写`);
+            }
+          }
+
+          // ── Post / update comment ──
+          if (failures.length > 0) {
+            const comment = [
+              '### ⚠️ Issue 信息不完整',
+              '',
+              '以下必填项未正确填写，请 **编辑此 Issue** 补充后重新提交：',
+              '',
+              ...failures.map((f, i) => `${i + 1}. ❌ ${f}`),
+            ].join('\n');
+
+            const existing = await github.rest.issues.listComments({ ...repo, issue_number: issueNumber, per_page: 50 });
+            const prev = existing.data.find(c => c.user?.login === botLogin && c.body?.includes('### ⚠️ Issue 信息不完整'));
+
+            if (prev) {
+              await github.rest.issues.updateComment({ ...repo, comment_id: prev.id, body: comment });
+            } else {
+              await github.rest.issues.createComment({ ...repo, issue_number: issueNumber, body: comment });
+            }
+
+            try {
+              await github.rest.issues.addLabels({ ...repo, issue_number: issueNumber, labels: [incompleteLabel] });
+            } catch {}
+
+            console.log(`[校验失败] ${failures.length} 项未通过:\n${failures.join('\n')}`);
+            core.setOutput('valid', 'false');
+          } else {
+            console.log('[校验通过] 所有必填项已完整填写');
+            core.setOutput('valid', 'true');
+          }
+
+    # ─────────────────────────────────────────────────────────────
+    # Step 2: AI log review
+    # ─────────────────────────────────────────────────────────────
+    - name: AI log review
+      if: inputs.skip-ai != 'true' && inputs.ai-api-key != ''
+      uses: actions/github-script@v7
+      env:
+        AI_KEY: ${{ inputs.ai-api-key }}
+        AI_BASE: ${{ inputs.ai-api-base }}
+        AI_MODEL: ${{ inputs.ai-model }}
+        BOT_LOGIN: ${{ inputs.comment-bot-login }}
+        SUSPICIOUS_LABEL: ${{ inputs.suspicious-label }}
+        FEATURE_PREFIX: ${{ inputs.feature-title-prefix }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const issueNumber = context.issue.number;
+          const repo = context.repo;
+          const botLogin = process.env.BOT_LOGIN || 'github-actions[bot]';
+          const suspiciousLabel = process.env.SUSPICIOUS_LABEL || 'ai:logs-suspicious';
+          const apiKey = process.env.AI_KEY;
+          const apiBase = process.env.AI_BASE || 'https://api.deepseek.com';
+          const model = process.env.AI_MODEL || 'deepseek-chat';
+
+          if (!apiKey) {
+            console.log('[AI 审核] 未配置 API key，跳过');
+            return;
+          }
+
+          let body = context.payload.issue.body || '';
+          body = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+          // Skip feature requests and enhancements — they don't have bug-report sections
+          const featurePrefix = process.env.FEATURE_PREFIX || '[FEATURE]';
+          const labels = (context.payload.issue.labels || []).map(l => typeof l === 'string' ? l : l.name);
+          if (context.payload.issue.title?.startsWith(featurePrefix) || labels.includes('enhancement')) {
+            console.log('Feature request / enhancement — skipping AI log review');
+            return;
+          }
+
+          const extract = (label) => {
+            const m = body.match(new RegExp('#{2,3} ' + label + '\\s*\\n+(.+?)(?=\\n#{2,3}|\\n*$)', 's'));
+            return m?.[1]?.trim() || '';
+          };
+
+          const logSection = extract('日志');
+          if (!logSection || logSection.length === 0) {
+            console.log('No log section found — skipping AI log review');
+            return;
+          }
+
+          const prompt = [
+            '你是一个 Bug Report 审核助手。请审查以下 Issue 中的"日志"字段是否真实、有效。',
+            '',
+            '审核标准：',
+            '1. 日志是否像真实的程序输出（包含路径、堆栈、时间戳、错误码等）？',
+            '2. 日志是否与 Bug 描述和复现步骤关联？',
+            '3. 日志是否明显是占位符、伪造、或不相关的内容？',
+            '4. 环境信息是否完整合理？',
+            '5. 日志中是否混入了真实密钥、Virtual Key、prompt 或模型回答正文？',
+            '',
+            '请用简短中文回复，格式如下：',
+            '---',
+            '真实性: ✅ 真实 / ⚠️ 存疑 / ❌ 明显伪造',
+            '理由: (1-2句话)',
+            '建议: (如有需要改进的地方)',
+            '---',
+            '',
+            '=== Issue 内容 ===',
+            `Bug 描述: ${extract('Bug 描述')}`,
+            `环境: ${extract('环境')}`,
+            `复现步骤: ${extract('复现步骤')}`,
+            `日志: ${logSection}`,
+          ].join('\n');
+
+          const MAX_LEN = 8000;
+          const truncated = prompt.length > MAX_LEN ? prompt.substring(0, MAX_LEN - 100) + '\n...(内容过长已截断)' : prompt;
+
+          // 兼容基地址是否已包含 /v1：去掉末尾 /v1 和多余斜杠
+          const cleanBase = apiBase.replace(/\/+$/, '').replace(/\/v1$/, '');
+
+          try {
+            const response = await fetch(`${cleanBase}/v1/chat/completions`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model,
+                messages: [
+                  { role: 'system', content: '你是一个严谨的 Bug Report 审核助手。只根据事实判断，不猜测。回复简洁。' },
+                  { role: 'user', content: truncated },
+                ],
+                temperature: 0.1,
+                max_tokens: 500,
+              }),
+            });
+
+            if (!response.ok) {
+              console.error(`[AI 审核] API 失败 (${response.status}): ${await response.text()}`);
+              return;
+            }
+
+            const data = await response.json();
+            const aiResult = data.choices?.[0]?.message?.content || '';
+            console.log(`[AI 审核] 结果:\n${aiResult}`);
+
+            const hasFake = aiResult.includes('❌');
+            const hasSuspicious = aiResult.includes('⚠️');
+
+            const comment = [
+              '### 🤖 AI 日志审核',
+              '',
+              aiResult,
+              '',
+              hasFake || hasSuspicious
+                ? '> ⚠️ AI 检测到日志可能存在问题，请维护者人工复核。'
+                : '> ✅ AI 审核通过，日志看起来真实可信。',
+            ].join('\n');
+
+            // Dedup: update existing or create new
+            const existing = await github.rest.issues.listComments({ ...repo, issue_number: issueNumber, per_page: 50 });
+            const prev = existing.data.find(c => c.user?.login === botLogin && c.body?.includes('### 🤖 AI 日志审核'));
+
+            if (prev) {
+              await github.rest.issues.updateComment({ ...repo, comment_id: prev.id, body: comment });
+            } else {
+              await github.rest.issues.createComment({ ...repo, issue_number: issueNumber, body: comment });
+            }
+
+            if (hasFake) {
+              try {
+                await github.rest.issues.addLabels({ ...repo, issue_number: issueNumber, labels: [suspiciousLabel] });
+              } catch {}
+            }
+          } catch (err) {
+            console.error(`[AI 审核] 异常: ${err.message}`);
+          }

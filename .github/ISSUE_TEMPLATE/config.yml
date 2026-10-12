@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 文档
+    url: https://github.com/miqro-org/miqro-gate/tree/main/docs
+    about: 先查看文档，可能已经有答案
+  - name: 🔐 安全漏洞
+    url: https://github.com/miqro-org/miqro-gate/security/policy
+    about: 安全问题不要公开提交 issue，走安全策略里的私有渠道
