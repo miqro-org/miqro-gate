@@ -34,14 +34,12 @@ import java.util.UUID;
  */
 public class AdminIpAllowlistFilter extends OncePerRequestFilter {
 
-    private static final String X_FORWARDED_FOR = "X-Forwarded-For";
-
     private final List<IpCidrMatcher> allowlist;
-    private final List<IpCidrMatcher> trustedProxies;
+    private final ClientAddressResolver clientAddresses;
 
     public AdminIpAllowlistFilter(List<IpCidrMatcher> allowlist, List<IpCidrMatcher> trustedProxies) {
         this.allowlist = allowlist;
-        this.trustedProxies = trustedProxies;
+        this.clientAddresses = new ClientAddressResolver(trustedProxies);
     }
 
     @Override
@@ -64,43 +62,8 @@ public class AdminIpAllowlistFilter extends OncePerRequestFilter {
     }
 
     private boolean allowlisted(HttpServletRequest request) {
-        String client = effectiveClientAddress(request);
+        String client = clientAddresses.resolve(request);
         return client != null && allowlist.stream().anyMatch(m -> m.matches(client));
-    }
-
-    /**
-     * The address the allowlist must decide on (#445): the direct peer unless it is
-     * one of our trusted proxies, in which case the X-Forwarded-For chain is walked
-     * from the RIGHT — trusted-proxy entries are skipped and the first non-trusted
-     * entry (what the nearest trusted proxy actually saw) wins. Rightmost-walk is
-     * correct for both append- and replace-style proxies; trusting the LEFTMOST
-     * entry let any client prepend a forged allowlisted address.
-     */
-    private String effectiveClientAddress(HttpServletRequest request) {
-        String peer = request.getRemoteAddr();
-        if (!isTrusted(peer)) {
-            return peer;
-        }
-        String header = request.getHeader(X_FORWARDED_FOR);
-        if (header == null || header.isBlank()) {
-            return peer;
-        }
-        String[] parts = header.split(",", -1);
-        for (int i = parts.length - 1; i >= 0; i--) {
-            String candidate = parts[i].trim();
-            if (candidate.isEmpty() || "unknown".equalsIgnoreCase(candidate)) {
-                continue;
-            }
-            if (!isTrusted(candidate)) {
-                return candidate;
-            }
-        }
-        // The whole chain is our own infrastructure — fall back to the peer.
-        return peer;
-    }
-
-    private boolean isTrusted(String address) {
-        return address != null && trustedProxies.stream().anyMatch(m -> m.matches(address));
     }
 
     private static String requestId(HttpServletRequest request) {

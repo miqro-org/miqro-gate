@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.core.env.Environment;
@@ -305,6 +306,75 @@ class AuthenticationServiceTest {
             UUID sessionId = UUID.randomUUID();
             service.logout(user, sessionId, "req-1");
             verify(sessionService).revokeSession(sessionId);
+        }
+    }
+
+    @Nested
+    @DisplayName("Lockout ceiling and decay (ADR-0029 decision 1)")
+    class LockoutCeilingAndDecay {
+
+        @Test
+        @DisplayName("a lock never exceeds loginLockMax, however many failures accumulated")
+        void lockIsCappedAtTheConfiguredMaximum() {
+            authProperties.setLoginLockMax(Duration.ofMinutes(15));
+            // 15 failures drive the exponential multiplier to 1024x the 1-minute base
+            // — roughly 17 hours, an order of magnitude past the ceiling.
+            User user = buildUser(14, null, UserStatus.ACTIVE);
+            when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(user));
+
+            service.recordFailedLogin(user, "req-1");
+
+            User written = capturedUpdatedUser();
+            assertThat(written.status()).isEqualTo(UserStatus.LOCKED);
+            assertThat(Duration.between(Instant.now(), written.lockedUntil()))
+                    .isLessThanOrEqualTo(Duration.ofMinutes(15).plusSeconds(5));
+        }
+
+        @Test
+        @DisplayName("failing while a lock is active leaves its deadline untouched")
+        void activeLockIsNotExtended() {
+            Instant deadline = Instant.now().plus(Duration.ofMinutes(10));
+            User locked = buildUser(15, deadline, UserStatus.LOCKED);
+            when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(locked));
+
+            service.recordFailedLogin(locked, "req-1");
+
+            User written = capturedUpdatedUser();
+            assertThat(written.lockedUntil()).isEqualTo(deadline);
+            assertThat(written.failedLoginCount()).isEqualTo(16);
+        }
+
+        @Test
+        @DisplayName("an expired lock frees the account and restarts the count")
+        void expiredLockResetsTheCounter() {
+            User wasLocked = buildUser(7, Instant.now().minus(Duration.ofMinutes(1)), UserStatus.LOCKED);
+            when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(wasLocked));
+
+            service.recordFailedLogin(wasLocked, "req-1");
+
+            User written = capturedUpdatedUser();
+            assertThat(written.failedLoginCount()).isEqualTo(1);
+            assertThat(written.lockedUntil()).isNull();
+            assertThat(written.status()).isEqualTo(UserStatus.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("an indefinite lock (null deadline, the #445 admin form) is not downgraded")
+        void indefiniteLockIsLeftAlone() {
+            User indefinite = buildUser(9, null, UserStatus.LOCKED);
+            when(userRepository.findByIdForUpdate(USER_ID)).thenReturn(Optional.of(indefinite));
+
+            service.recordFailedLogin(indefinite, "req-1");
+
+            User written = capturedUpdatedUser();
+            assertThat(written.status()).isEqualTo(UserStatus.LOCKED);
+            assertThat(written.lockedUntil()).isNull();
+        }
+
+        private User capturedUpdatedUser() {
+            ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+            verify(userRepository).update(captor.capture());
+            return captor.getValue();
         }
     }
 

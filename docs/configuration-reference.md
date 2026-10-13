@@ -86,7 +86,8 @@ miqrokey.crypto.hmac.versions[v2]: /etc/miqrokey/keys/vk-hmac-v2.key
 | 配置 | 默认 | 说明 |
 |---|---:|---|
 | `MIQROKEY_BOOTSTRAP_SECRET_FILE` | 无 | 仅首个管理员创建时使用，完成后移除 |
-| `MIQROKEY_REGISTRATION_ENABLED` | `true` | 自助注册开关（F-REG，api-contract §3.1b）：`false` 时 `/api/v1/auth/register` 返回 403 REGISTRATION_DISABLED（邀请制部署）；公网部署建议另配网络层速率限制 |
+| `MIQROKEY_REGISTRATION_ENABLED` | `false` | 自助注册开关（F-REG，api-contract §3.1b）：`false` 时 `/api/v1/auth/register` 返回 403 REGISTRATION_DISABLED。**默认关闭**（ADR-0029 决策点 3）——自助注册是试用期的便利功能，账号默认由管理员创建；内测/试用部署显式置 `true` 才开启 |
+| `MIQROKEY_LOGIN_LOCK_MAX` | `15m` | **单次账号锁定时长的上界**（ADR-0029 决策点 1）。到上界后不再增长，且锁定到期会把失败计数清零——这两条一起让锁定重新是「临时」的。置 `0` 恢复无上界（不建议：知道用户名的人就能把账号一直按在地上） |
 | `MIQROKEY_PLATFORM_OIDC_ENABLED` | `false` | 平台 OIDC 登录总开关（P0a，ADR-0017）：`true` 后登录页出现「平台账号登录」 |
 | `MIQROKEY_PLATFORM_OIDC_IDP_CODE` | `forge` | 身份源标识；作为 `user_identity_link.idp` 的写入值与绑定查询条件（`PlatformOidcAuthService#insertLink/findLinkedUser`）。**已投入使用后修改会使既有绑定的查询落空**：`AUTO_PROVISION=true` 时按新 idp 再建一次账号，`false` 时原用户登录被拒（ACCOUNT_UNLINKED）；改值需同步迁移 `user_identity_link.idp` |
 | `MIQROKEY_PLATFORM_OIDC_NAME` | `平台账号登录` | 登录页平台登录入口的显示名（`PlatformOidcAuthService` 构造的 `ProviderInfo`），仅影响展示 |

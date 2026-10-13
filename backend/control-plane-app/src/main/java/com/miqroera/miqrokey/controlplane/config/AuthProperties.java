@@ -26,15 +26,29 @@ public class AuthProperties {
     /** Base lockout duration for the first lockout event. */
     private Duration loginLockBase = Duration.ofMinutes(1);
 
+    /**
+     * Upper bound for a single lockout (ADR-0029 decision 1). A lock is an
+     * account-level denial that anyone who knows the username can trigger, so its
+     * growth has to stop somewhere: without a ceiling the attacker holds the
+     * account down for as long as they keep failing logins, and the victim cannot
+     * outwait them. Fifteen minutes keeps the worst-case outage short while the
+     * decay-on-expiry rule still makes every guessing cycle pay the full threshold
+     * again.
+     */
+    private Duration loginLockMax = Duration.ofMinutes(15);
+
     /** Path to bootstrap secret file (only needed for first admin creation). */
     private String bootstrapSecretFile;
 
     /**
-     * Whether open self-registration is enabled (F-REG). Defaults to true for
-     * trial/internal deployment; production deployments that want invitation-only
-     * accounts set {@code MIQROKEY_REGISTRATION_ENABLED=false}.
+     * Whether open self-registration is enabled (F-REG). Defaults to <b>false</b>
+     * (ADR-0029 decision 3): accounts are an administrator's to create, and this
+     * product's self-registration is a trial convenience. A default of true left
+     * every deployment — production included — open to anyone who could reach the
+     * portal, without anyone having chosen that. Trial and internal deployments opt
+     * in explicitly with {@code MIQROKEY_REGISTRATION_ENABLED=true}.
      */
-    private boolean registrationEnabled = true;
+    private boolean registrationEnabled = false;
 
     // ---- Platform OIDC login (P0a, ADR-0017): authorization-code RP flow ----
 
@@ -138,6 +152,12 @@ public class AuthProperties {
     }
     public void setLoginLockBase(Duration v) {
         this.loginLockBase = v;
+    }
+    public Duration getLoginLockMax() {
+        return loginLockMax;
+    }
+    public void setLoginLockMax(Duration v) {
+        this.loginLockMax = v;
     }
     public String getBootstrapSecretFile() {
         return bootstrapSecretFile;

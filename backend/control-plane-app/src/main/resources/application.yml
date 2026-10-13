@@ -18,8 +18,17 @@ spring:
     locations: classpath:db/migration
 
 miqrokey:
-  # 自助注册开关（F-REG）：默认开启便于内测/试用；需要邀请制时置 false。
-  registration-enabled: ${MIQROKEY_REGISTRATION_ENABLED:true}
+  # 自助注册开关（F-REG）：默认关闭（ADR-0029 决策点 3）。账号由管理员创建；自助注册是
+  # 试用期的便利功能，内测/试用部署显式置 true 才开启——默认开启会让每个部署（含生产）
+  # 在没人主动选择的情况下对任何能访问门户的人开放注册。
+  registration-enabled: ${MIQROKEY_REGISTRATION_ENABLED:false}
+  # 认证端点的按来源限流（ADR-0029 决策点 2）：只对数接受凭据的端点计数（login/register/
+  # bootstrap/password），不触及推理数据面。默认额度偏宽——同一 NAT 后的人共用一个地址，
+  # 收紧会把整个办公室挡在门外。
+  auth-rate-limit:
+    enabled: ${MIQROKEY_AUTH_RATE_LIMIT_ENABLED:true}
+    max-requests: ${MIQROKEY_AUTH_RATE_LIMIT_MAX_REQUESTS:60}
+    window: ${MIQROKEY_AUTH_RATE_LIMIT_WINDOW:5m}
   # 平台 OIDC 登录（P0a，ADR-0017）：授权码 RP。开关默认关；平台侧注册
   # client 后填入（test.forge.miqroera.com 契约见 docs/open-admin 蓝图层）。
   platform-oidc-enabled: ${MIQROKEY_PLATFORM_OIDC_ENABLED:false}

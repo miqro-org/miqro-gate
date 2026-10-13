@@ -58,7 +58,7 @@
 
 - 只创建 `USER` 角色账号（管理员仍走 `/admin/users` 邀请制流程）；`mustChangePassword=false`（密码为本人所设）。
 - 校验：用户名空白/超长 → `400 USERNAME_INVALID`；重复 → `409 USERNAME_TAKEN`（租户行锁序列化并发注册）；密码不满足策略（长度/字符类别/常见密码）→ `400 PASSWORD_INVALID`。
-- 开关 `miqrokey.registration-enabled`（`MIQROKEY_REGISTRATION_ENABLED`，默认 `true`）为 `false` 时 → `403 REGISTRATION_DISABLED`；登录、bootstrap 不受影响。私有化部署需要"仅邀请"时可关闭。
+- 开关 `miqrokey.registration-enabled`（`MIQROKEY_REGISTRATION_ENABLED`，**默认 `false`**，ADR-0029 决策点 3）为 `false` 时 → `403 REGISTRATION_DISABLED`；登录、bootstrap 不受影响。默认关闭：账号由管理员创建，内测/试用部署显式置 `true` 才开启。
 - 公开端点：与 login/bootstrap 一样无会话、无 CSRF 要求；审计事件 `REGISTER`。
 - 防滥用注记：单租户内部/试用规模未加频率限制；对外公网部署建议在网络层加速率限制（记录于配置参考）。
 

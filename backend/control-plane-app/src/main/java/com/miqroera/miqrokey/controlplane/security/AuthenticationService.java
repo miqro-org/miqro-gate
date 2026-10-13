@@ -222,14 +222,40 @@ public class AuthenticationService {
         User fresh = userRepository.findByIdForUpdate(user.id())
                 .orElseThrow(() -> new IllegalStateException("User disappeared: " + user.id()));
 
-        int newFailCount = fresh.failedLoginCount() + 1;
         Instant now = Instant.now();
-        Instant lockedUntil = null;
+        Instant previousDeadline = fresh.lockedUntil();
+        int failuresSoFar = fresh.failedLoginCount();
+        Instant lockedUntil = previousDeadline;
         UserStatus newStatus = fresh.status();
 
-        if (newFailCount >= authProperties.getLoginMaxFailures()) {
+        // ADR-0029 decision 1, decay: a timed lock that has expired frees the account
+        // and starts the count over. Without this the counter only ever grows, so one
+        // later typo re-arms the longest lock the account has ever reached. Indefinite
+        // locks — a null deadline, the #445 admin form — are deliberately untouched.
+        if (fresh.status() == UserStatus.LOCKED && previousDeadline != null && !now.isBefore(previousDeadline)) {
+            failuresSoFar = 0;
+            lockedUntil = null;
+            newStatus = UserStatus.ACTIVE;
+        }
+
+        int newFailCount = failuresSoFar + 1;
+
+        // ADR-0029 decision 1, ceiling: an active lock is never pushed further out.
+        // Locking needs only a username, so a deadline a stranger can extend by
+        // failing more logins is a denial the victim cannot outwait — that is what
+        // made a "temporary" lockout permanent. The counter still advances (the
+        // audit trail and the next lock's size depend on it); once the lock expires,
+        // the branch above clears it and the next failures re-arm from zero.
+        //
+        // A null deadline counts as active too: that is the indefinite lock an admin
+        // sets (#445), and letting a failed login stamp a deadline on it would
+        // quietly downgrade the admin's intent to a timed lock.
+        boolean lockActive = newStatus == UserStatus.LOCKED && (lockedUntil == null || now.isBefore(lockedUntil));
+
+        if (newFailCount >= authProperties.getLoginMaxFailures() && !lockActive) {
             long multiplier = 1L << Math.max(0, newFailCount - authProperties.getLoginMaxFailures());
-            Duration lockDuration = authProperties.getLoginLockBase().multipliedBy(Math.min(multiplier, 1024));
+            Duration lockDuration = cappedLockDuration(
+                    authProperties.getLoginLockBase().multipliedBy(Math.min(multiplier, 1024)));
             lockedUntil = now.plus(lockDuration);
             newStatus = UserStatus.LOCKED;
             LOG.warn("User {} locked until {} after {} failures", fresh.username(), lockedUntil, newFailCount);
@@ -248,6 +274,21 @@ public class AuthenticationService {
             auditService.record(fresh.tenantId(), fresh.id(), "ACCOUNT_LOCKED", "USER", fresh.id(),
                     "{\"lockedUntil\":\"" + lockedUntil + "\"}", requestId);
         }
+    }
+
+    /**
+     * ADR-0029 decision 1: a single lockout never exceeds {@code loginLockMax}, so
+     * an account cannot be held down for longer than one window no matter how many
+     * failures accumulate against it. A non-positive {@code loginLockMax} disables
+     * the ceiling (kept so an operator can restore the old unbounded growth without
+     * a code change).
+     */
+    private Duration cappedLockDuration(Duration duration) {
+        Duration max = authProperties.getLoginLockMax();
+        if (max == null || max.isZero() || max.isNegative()) {
+            return duration;
+        }
+        return duration.compareTo(max) > 0 ? max : duration;
     }
 
     /**

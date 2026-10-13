@@ -2,6 +2,7 @@ package com.miqroera.miqrokey.controlplane.config;
 
 import com.miqroera.miqrokey.domain.crypto.ConsumerJwtVerifier;
 import com.miqroera.miqrokey.controlplane.security.AdminIpAllowlistFilter;
+import com.miqroera.miqrokey.controlplane.security.AuthRateLimitFilter;
 import com.miqroera.miqrokey.controlplane.security.AuthenticationService;
 import com.miqroera.miqrokey.controlplane.security.CsrfInterceptor;
 import com.miqroera.miqrokey.controlplane.security.IpCidrMatcher;
@@ -105,6 +106,30 @@ public class SecurityConfig implements WebMvcConfigurer {
         registration.addUrlPatterns("/api/*");
         // Fail fast before the SessionFilter (order -100) evaluates the request.
         registration.setOrder(-110);
+        return registration;
+    }
+
+    /**
+     * Per-source rate limit on the credential surface (ADR-0029 decision 2). It
+     * resolves the source address the same way the IP allowlist does — a shared
+     * {@link com.miqroera.miqrokey.controlplane.security.ClientAddressResolver}, so
+     * the two never disagree about who is calling.
+     */
+    @Bean
+    public AuthRateLimitFilter authRateLimitFilter(AuthRateLimitProperties properties,
+            AdminAccessProperties accessProperties) {
+        List<IpCidrMatcher> proxies = accessProperties.trustedProxies().stream().map(IpCidrMatcher::parse).toList();
+        return new AuthRateLimitFilter(properties, proxies);
+    }
+
+    @Bean
+    public FilterRegistrationBean<AuthRateLimitFilter> authRateLimitFilterRegistration(AuthRateLimitFilter filter) {
+        FilterRegistrationBean<AuthRateLimitFilter> registration = new FilterRegistrationBean<>();
+        registration.setFilter(filter);
+        registration.addUrlPatterns("/api/v1/auth/*");
+        // After the IP allowlist (-110) and before the SessionFilter (-100): the
+        // limit must answer before any credential work begins.
+        registration.setOrder(-105);
         return registration;
     }
 
