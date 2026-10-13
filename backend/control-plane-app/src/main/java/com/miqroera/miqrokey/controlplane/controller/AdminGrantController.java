@@ -3,12 +3,14 @@ package com.miqroera.miqrokey.controlplane.controller;
 import com.miqroera.miqrokey.controlplane.security.UserContext;
 import com.miqroera.miqrokey.controlplane.service.AdminOrgService;
 import com.miqroera.miqrokey.domain.model.ProjectProviderGrant;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -54,6 +56,7 @@ public class AdminGrantController {
     }
 
     @DeleteMapping("/{grantId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void disable(@PathVariable UUID grantId) {
         var admin = userContext.getUser();
         orgService.disableGrant(admin.tenantId(), admin.id(), grantId);

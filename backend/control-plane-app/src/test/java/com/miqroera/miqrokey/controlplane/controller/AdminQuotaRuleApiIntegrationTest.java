@@ -482,7 +482,7 @@ class AdminQuotaRuleApiIntegrationTest {
 
         // Release the reference, then the delete succeeds.
         mockMvc.perform(delete("/api/v1/admin/alert-rules/" + alertId).cookie(adminSession, adminCsrf)
-                .header("X-CSRF-Token", adminCsrfToken)).andExpect(status().isOk());
+                .header("X-CSRF-Token", adminCsrfToken)).andExpect(status().isNoContent());
         mockMvc.perform(delete("/api/v1/admin/quota-rules/" + ruleId).cookie(adminSession, adminCsrf)
                 .header("X-CSRF-Token", adminCsrfToken)).andExpect(status().isNoContent());
     }

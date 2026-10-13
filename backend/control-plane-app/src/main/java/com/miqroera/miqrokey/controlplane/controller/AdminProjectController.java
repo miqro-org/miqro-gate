@@ -8,6 +8,7 @@ import com.miqroera.miqrokey.domain.model.ProjectStatus;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -57,12 +59,14 @@ public class AdminProjectController {
     }
 
     @PostMapping("/{projectId}/members")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void addMember(@PathVariable UUID projectId, @RequestBody ProjectMemberRequest body) {
         var admin = userContext.getUser();
         orgService.addProjectMember(admin.tenantId(), admin.id(), projectId, body.userId());
     }
 
     @DeleteMapping("/{projectId}/members/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void removeMember(@PathVariable UUID projectId, @PathVariable UUID userId) {
         var admin = userContext.getUser();
         orgService.removeProjectMember(admin.tenantId(), admin.id(), projectId, userId);
@@ -85,6 +89,7 @@ public class AdminProjectController {
     }
 
     @DeleteMapping("/{projectId}/repositories/{mappingId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void removeRepository(@PathVariable UUID projectId, @PathVariable UUID mappingId) {
         var admin = userContext.getUser();
         orgService.removeProjectRepository(admin.tenantId(), admin.id(), projectId, mappingId);

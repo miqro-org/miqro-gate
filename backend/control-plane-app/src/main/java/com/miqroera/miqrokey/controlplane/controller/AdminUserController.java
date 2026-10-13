@@ -7,12 +7,14 @@ import com.miqroera.miqrokey.controlplane.service.AdminOrgService.UserCreated;
 import com.miqroera.miqrokey.controlplane.service.AdminOrgService.UserPasswordReset;
 import com.miqroera.miqrokey.domain.model.UserRole;
 import com.miqroera.miqrokey.domain.model.UserStatus;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -72,6 +74,7 @@ public class AdminUserController {
     }
 
     @PostMapping("/{userId}/revoke-sessions")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void revokeSessions(@PathVariable UUID userId) {
         var admin = userContext.getUser();
         orgService.revokeSessions(admin.tenantId(), admin.id(), userId);

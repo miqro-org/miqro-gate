@@ -156,7 +156,8 @@ class AdminMcpRouteRuleApiIntegrationTest {
         assertAudited("MCP_ROUTE_RULE_STATUS", adminId, "req-rr-status", "DISABLED");
 
         mockMvc.perform(delete(rulesUrl() + "/" + ruleId).cookie(sessionCookie, csrfCookie)
-                .header("X-CSRF-Token", csrfToken).header("X-Request-Id", "req-rr-delete")).andExpect(status().isOk());
+                .header("X-CSRF-Token", csrfToken).header("X-Request-Id", "req-rr-delete"))
+                .andExpect(status().isNoContent());
         assertAudited("MCP_ROUTE_RULE_DELETE", adminId, "req-rr-delete", "audited-route");
     }
 
@@ -372,7 +373,7 @@ class AdminMcpRouteRuleApiIntegrationTest {
 
         mockMvc.perform(
                 delete(rulesUrl() + "/" + ruleId).cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken))
-                .andExpect(status().isOk());
+                .andExpect(status().isNoContent());
         mockMvc.perform(get(rulesUrl()).cookie(sessionCookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$", hasSize(2))); // default + other
 

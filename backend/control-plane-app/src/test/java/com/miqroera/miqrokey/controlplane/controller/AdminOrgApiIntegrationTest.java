@@ -288,6 +288,44 @@ class AdminOrgApiIntegrationTest {
     }
 
     /**
+     * Admin-side session revocation is a bodyless success, so it answers 204 rather
+     * than a 200 with an empty body: the portal's fetch wrapper only short-circuits
+     * 204, and anything else is parsed as JSON — an empty body makes that parse
+     * throw, which surfaces as a bogus "cannot reach MiQroGate" error even though
+     * the revocation already happened.
+     */
+    @Test
+    @DisplayName("revoke-sessions answers 204 and kills the target user's live session")
+    void revokeSessions() throws Exception {
+        MvcResult created = mockMvc
+                .perform(post("/api/v1/admin/users").contentType(MediaType.APPLICATION_JSON)
+                        .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
+                        .content(objectMapper.writeValueAsString(
+                                Map.of("username", "carol", "displayName", "Carol", "role", "USER"))))
+                .andExpect(status().isOk()).andReturn();
+        Map<?, ?> createdBody = objectMapper.readValue(created.getResponse().getContentAsString(), Map.class);
+        String carolId = ((Map<?, ?>) createdBody.get("user")).get("id").toString();
+        String carolTemp = createdBody.get("temporaryPassword").toString();
+
+        MvcResult login = mockMvc
+                .perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new LoginRequest("carol", carolTemp))))
+                .andExpect(status().isOk()).andReturn();
+        Cookie carolSession = cookie(login, "MIQROKEY_SESSION");
+        mockMvc.perform(get("/api/v1/auth/me").cookie(carolSession)).andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/admin/users/" + carolId + "/revoke-sessions").cookie(sessionCookie, csrfCookie)
+                .header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
+
+        // The session is gone, and the action is on the audit chain.
+        mockMvc.perform(get("/api/v1/auth/me").cookie(carolSession)).andExpect(status().isUnauthorized());
+        Integer audits = jdbc.queryForObject(
+                "SELECT count(*) FROM admin_audit_events WHERE action = 'USER_SESSIONS_REVOKED'",
+                new MapSqlParameterSource(), Integer.class);
+        assertThat(audits).isEqualTo(1);
+    }
+
+    /**
      * #1019: shape limits are answered by validation, not by the database. Before
      * the DTO constraints existed, an over-long team name reached Postgres and came
      * back as 409 RESOURCE_CONFLICT ("duplicate or referenced") and a missing
@@ -369,11 +407,11 @@ class AdminOrgApiIntegrationTest {
 
         mockMvc.perform(post("/api/v1/admin/teams/" + teamId + "/members").contentType(MediaType.APPLICATION_JSON)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isOk());
+                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/v1/admin/teams/" + teamId + "/members").cookie(sessionCookie))
                 .andExpect(status().isOk()).andExpect(jsonPath("$[0].username").value("bob"));
         mockMvc.perform(delete("/api/v1/admin/teams/" + teamId + "/members/" + userId).cookie(sessionCookie, csrfCookie)
-                .header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
 
         MvcResult project = mockMvc
                 .perform(post("/api/v1/admin/projects").contentType(MediaType.APPLICATION_JSON)
@@ -389,7 +427,7 @@ class AdminOrgApiIntegrationTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PROJECT_CODE_TAKEN"));
         mockMvc.perform(post("/api/v1/admin/projects/" + projectId + "/members").contentType(MediaType.APPLICATION_JSON)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isOk());
+                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/v1/admin/projects/" + projectId + "/members").cookie(sessionCookie))
                 .andExpect(status().isOk()).andExpect(jsonPath("$[0].username").value("bob"));
     }
@@ -426,7 +464,7 @@ class AdminOrgApiIntegrationTest {
         mockMvc.perform(get("/api/v1/admin/grants/" + grantId + "/models").cookie(sessionCookie))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
         mockMvc.perform(delete("/api/v1/admin/grants/" + grantId).cookie(sessionCookie, csrfCookie)
-                .header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
     }
 
     @Test
@@ -540,7 +578,7 @@ class AdminOrgApiIntegrationTest {
         String bobTemp = (String) inviteBody.get("temporaryPassword");
         mockMvc.perform(post("/api/v1/admin/projects/" + projectId + "/members").contentType(MediaType.APPLICATION_JSON)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("userId", bobId)))).andExpect(status().isOk());
+                .content(objectMapper.writeValueAsString(Map.of("userId", bobId)))).andExpect(status().isNoContent());
 
         MvcResult bobLogin = mockMvc
                 .perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
@@ -576,7 +614,7 @@ class AdminOrgApiIntegrationTest {
         // 4) Removing the member disables the (key × project) binding and, since
         // it was the key's only binding, revokes the key.
         mockMvc.perform(delete("/api/v1/admin/projects/" + projectId + "/members/" + bobId)
-                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
 
         String bindingStatus = jdbc.queryForObject("SELECT status FROM key_project_binding WHERE virtual_key_id = :id",
                 new MapSqlParameterSource("id", UUID.fromString(keyId)), String.class);
@@ -604,7 +642,7 @@ class AdminOrgApiIntegrationTest {
         String bobTemp = (String) inviteBody.get("temporaryPassword");
         mockMvc.perform(post("/api/v1/admin/projects/" + projectId + "/members").contentType(MediaType.APPLICATION_JSON)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("userId", bobId)))).andExpect(status().isOk());
+                .content(objectMapper.writeValueAsString(Map.of("userId", bobId)))).andExpect(status().isNoContent());
 
         MvcResult bobLogin = mockMvc
                 .perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
@@ -632,7 +670,7 @@ class AdminOrgApiIntegrationTest {
         mockMvc.perform(post("/api/v1/me/virtual-keys/" + keyId + "/disable").cookie(bobSession, bobCsrf)
                 .header("X-CSRF-Token", bobCsrf.getValue())).andExpect(status().isOk());
         mockMvc.perform(delete("/api/v1/admin/projects/" + projectId + "/members/" + bobId)
-                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
 
         // Membership removal is the authority for the project route (ADR-0018):
         // a key that was merely parked must not keep an ACTIVE binding.
@@ -803,7 +841,7 @@ class AdminOrgApiIntegrationTest {
 
         // Clear -> unconfigured; the bucket project row is retained for history.
         mockMvc.perform(delete("/api/v1/admin/unattributed-policy").cookie(sessionCookie, csrfCookie)
-                .header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/v1/admin/unattributed-policy").cookie(sessionCookie)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.configured").value(false));
         Integer bucketRows = jdbc.queryForObject("SELECT count(*) FROM projects WHERE id = :id AND system",
@@ -916,7 +954,7 @@ class AdminOrgApiIntegrationTest {
 
         // Delete, then the same id is gone.
         mockMvc.perform(delete("/api/v1/admin/projects/" + p1 + "/repositories/" + mappingId)
-                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
         mockMvc.perform(delete("/api/v1/admin/projects/" + p1 + "/repositories/" + mappingId)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("REPOSITORY_NOT_FOUND"));
@@ -992,7 +1030,7 @@ class AdminOrgApiIntegrationTest {
 
         // Removing the membership drops the row again.
         mockMvc.perform(delete("/api/v1/admin/projects/" + core + "/members/" + userId)
-                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
         mockMvc.perform(get("/api/v1/admin/users/" + userId + "/project-memberships").cookie(sessionCookie))
                 .andExpect(status().isOk()).andExpect(jsonPath("$[0].projectCode").value("TOOLS"));
 
@@ -1015,6 +1053,6 @@ class AdminOrgApiIntegrationTest {
     private void addMember(String projectId, String userId) throws Exception {
         mockMvc.perform(post("/api/v1/admin/projects/" + projectId + "/members").contentType(MediaType.APPLICATION_JSON)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isOk());
+                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isNoContent());
     }
 }

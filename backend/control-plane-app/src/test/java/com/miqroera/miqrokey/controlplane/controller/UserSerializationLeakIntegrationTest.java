@@ -209,7 +209,7 @@ class UserSerializationLeakIntegrationTest {
         teamId = objectMapper.readValue(team.getResponse().getContentAsString(), Map.class).get("id").toString();
         mockMvc.perform(post("/api/v1/admin/teams/" + teamId + "/members").contentType(MediaType.APPLICATION_JSON)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isOk());
+                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isNoContent());
 
         MvcResult project = mockMvc
                 .perform(post("/api/v1/admin/projects").contentType(MediaType.APPLICATION_JSON)
@@ -219,7 +219,7 @@ class UserSerializationLeakIntegrationTest {
         projectId = objectMapper.readValue(project.getResponse().getContentAsString(), Map.class).get("id").toString();
         mockMvc.perform(post("/api/v1/admin/projects/" + projectId + "/members").contentType(MediaType.APPLICATION_JSON)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isOk());
+                .content(objectMapper.writeValueAsString(Map.of("userId", userId)))).andExpect(status().isNoContent());
 
         return (String) createdBody.get("temporaryPassword");
     }
