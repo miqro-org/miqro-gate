@@ -58,6 +58,22 @@ public interface McpServiceRepository {
      */
     Optional<EncryptedSecret> findBackendSecret(UUID id, UUID tenantId);
 
+    /**
+     * Sets identity passthrough for a service (ADR-0028): the mode, the header the
+     * principal is written into, and the MAC key. A null secret clears the key —
+     * the row's constraint requires the triple to exist exactly when the mode is
+     * {@code SIGNED}, so callers switch the mode and the key together.
+     */
+    McpService updateIdentitySettings(UUID id, UUID tenantId, String mode, String headerName,
+            EncryptedSecret encryptedSecret);
+
+    /**
+     * The MAC key for identity passthrough — write-only. No read surface returns
+     * it, and it is deliberately not part of the route snapshot's service record:
+     * the snapshot carries the ciphertext for the gateway to decrypt at call time.
+     */
+    Optional<EncryptedSecret> findIdentitySecret(UUID id, UUID tenantId);
+
     /** Sets the per-service data-plane upstream budget (I20, doc 135906). */
     McpService updateUpstreamTimeout(UUID id, UUID tenantId, int upstreamTimeoutMs);
 }

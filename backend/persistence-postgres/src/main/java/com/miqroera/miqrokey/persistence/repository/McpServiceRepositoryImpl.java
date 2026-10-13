@@ -32,7 +32,11 @@ public class McpServiceRepositoryImpl implements McpServiceRepository {
             rs.getTimestamp("backend_secret_updated_at") != null
                     ? rs.getTimestamp("backend_secret_updated_at").toInstant()
                     : null,
-            rs.getInt("upstream_timeout_ms"), rs.getString("check_mode"));
+            rs.getInt("upstream_timeout_ms"), rs.getString("check_mode"), rs.getString("identity_forwarding"),
+            rs.getString("identity_header_name"),
+            rs.getTimestamp("identity_secret_updated_at") != null
+                    ? rs.getTimestamp("identity_secret_updated_at").toInstant()
+                    : null);
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -128,6 +132,51 @@ public class McpServiceRepositoryImpl implements McpServiceRepository {
             throw new OptimisticLockingFailureException("Optimistic lock failure: mcp service " + service.id());
         }
         return findByIdAndTenantId(service.id(), service.tenantId()).orElseThrow();
+    }
+
+    @Override
+    public Optional<EncryptedSecret> findIdentitySecret(UUID id, UUID tenantId) {
+        return jdbc.query("""
+                SELECT identity_secret_ciphertext, identity_secret_nonce, identity_secret_key_version
+                FROM mcp_services
+                WHERE id = :id AND tenant_id = :tenantId
+                """, new MapSqlParameterSource("id", id).addValue("tenantId", tenantId), (rs, rowNum) -> {
+            byte[] ciphertext = rs.getBytes("identity_secret_ciphertext");
+            if (ciphertext == null) {
+                return null; // no identity secret configured — Spring skips a null row
+            }
+            return new EncryptedSecret(ciphertext, rs.getBytes("identity_secret_nonce"),
+                    rs.getString("identity_secret_key_version"));
+        }).stream().findFirst();
+    }
+
+    @Override
+    @Transactional
+    public McpService updateIdentitySettings(UUID id, UUID tenantId, String mode, String headerName,
+            EncryptedSecret encryptedSecret) {
+        int rows = jdbc.update("""
+                UPDATE mcp_services
+                SET identity_forwarding = :mode,
+                    identity_header_name = :headerName,
+                    identity_secret_ciphertext = :ciphertext,
+                    identity_secret_nonce = :nonce,
+                    identity_secret_key_version = :keyVersion,
+                    identity_secret_updated_at = :updatedAt,
+                    version = version + 1, updated_at = now()
+                WHERE id = :id AND tenant_id = :tenantId
+                """,
+                new MapSqlParameterSource("id", id).addValue("tenantId", tenantId).addValue("mode", mode)
+                        .addValue("headerName", headerName)
+                        .addValue("ciphertext", encryptedSecret == null ? null : encryptedSecret.ciphertext())
+                        .addValue("nonce", encryptedSecret == null ? null : encryptedSecret.nonce())
+                        .addValue("keyVersion", encryptedSecret == null ? null : encryptedSecret.keyVersion())
+                        .addValue("updatedAt",
+                                encryptedSecret == null ? null : java.sql.Timestamp.from(java.time.Instant.now())));
+        if (rows == 0) {
+            throw new org.springframework.dao.EmptyResultDataAccessException(1);
+        }
+        return findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new org.springframework.dao.EmptyResultDataAccessException(1));
     }
 
     @Override

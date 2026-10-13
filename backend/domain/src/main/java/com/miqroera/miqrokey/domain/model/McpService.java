@@ -27,7 +27,15 @@ public record McpService(UUID id, UUID tenantId, String name, String description
         String status, String healthStatus, Instant healthCheckedAt, int consecutiveFailures, int consecutiveSuccesses,
         int checkIntervalSeconds, int checkTimeoutSeconds, int failThreshold, int recoverThreshold, String checkPath,
         long version, UUID createdBy, Instant createdAt, Instant updatedAt, String backendAuthMode,
-        Instant backendSecretUpdatedAt, int upstreamTimeoutMs, String checkMode) {
+        Instant backendSecretUpdatedAt, int upstreamTimeoutMs, String checkMode, String identityForwarding,
+        String identityHeaderName, Instant identitySecretUpdatedAt) {
+
+    /**
+     * Identity passthrough (ADR-0028) is off unless a service opts in, so an
+     * upstream that is not ready for the header never receives one.
+     */
+    public static final String IDENTITY_OFF = "OFF";
+    public static final String IDENTITY_SIGNED = "SIGNED";
 
     /** Tencent doc 135906 backend config default ({@code 超时时间} 60000 ms). */
     public static final int DEFAULT_UPSTREAM_TIMEOUT_MS = 60000;
@@ -63,6 +71,18 @@ public record McpService(UUID id, UUID tenantId, String name, String description
                 consecutiveFailures, consecutiveSuccesses, checkIntervalSeconds, checkTimeoutSeconds, failThreshold,
                 recoverThreshold, checkPath, version, createdBy, createdAt, updatedAt, backendAuthMode,
                 backendSecretUpdatedAt, upstreamTimeoutMs, CHECK_MODE_HEALTH_PATH);
+    }
+
+    /** Compatibility constructor: no identity passthrough (pre-V74 shape). */
+    public McpService(UUID id, UUID tenantId, String name, String description, String endpoint, String transport,
+            String status, String healthStatus, Instant healthCheckedAt, int consecutiveFailures,
+            int consecutiveSuccesses, int checkIntervalSeconds, int checkTimeoutSeconds, int failThreshold,
+            int recoverThreshold, String checkPath, long version, UUID createdBy, Instant createdAt, Instant updatedAt,
+            String backendAuthMode, Instant backendSecretUpdatedAt, int upstreamTimeoutMs, String checkMode) {
+        this(id, tenantId, name, description, endpoint, transport, status, healthStatus, healthCheckedAt,
+                consecutiveFailures, consecutiveSuccesses, checkIntervalSeconds, checkTimeoutSeconds, failThreshold,
+                recoverThreshold, checkPath, version, createdBy, createdAt, updatedAt, backendAuthMode,
+                backendSecretUpdatedAt, upstreamTimeoutMs, checkMode, IDENTITY_OFF, null, null);
     }
 
     public McpService {

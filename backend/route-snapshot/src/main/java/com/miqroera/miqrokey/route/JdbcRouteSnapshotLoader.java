@@ -364,6 +364,22 @@ public final class JdbcRouteSnapshotLoader {
      * server-list grants, tools joined with optional override grants (a tool row
      * repeats once per override consumer).
      */
+    /**
+     * The identity MAC key's ciphertext triple (ADR-0028), or null when the service
+     * performs no identity passthrough. The key travels as ciphertext exactly like
+     * the backend credential: the snapshot never holds key material, and only the
+     * gateway's decrypt scheduler can open it.
+     */
+    private static com.miqroera.miqrokey.domain.crypto.EncryptedSecret identitySecret(java.sql.ResultSet rs)
+            throws java.sql.SQLException {
+        byte[] ciphertext = rs.getBytes("identity_secret_ciphertext");
+        if (ciphertext == null) {
+            return null;
+        }
+        return new com.miqroera.miqrokey.domain.crypto.EncryptedSecret(ciphertext, rs.getBytes("identity_secret_nonce"),
+                rs.getString("identity_secret_key_version"));
+    }
+
     private Map<String, RouteSnapshot.McpServerRecord> loadMcpServices() {
         Map<String, RouteSnapshot.McpServerRecord> services = new LinkedHashMap<>();
         Map<UUID, Set<UUID>> serverLists = new LinkedHashMap<>();
@@ -376,6 +392,8 @@ public final class JdbcRouteSnapshotLoader {
                 SELECT s.id, s.tenant_id, s.name, s.endpoint, s.transport, s.status, a.mode AS acl_mode,
                        s.backend_auth_mode, s.backend_secret_ciphertext, s.backend_secret_nonce,
                        s.backend_secret_key_version, s.upstream_timeout_ms,
+                       s.identity_forwarding, s.identity_header_name, s.identity_secret_ciphertext,
+                       s.identity_secret_nonce, s.identity_secret_key_version,
                        p.retry_enabled, p.retry_max, p.retry_conditions, p.retry_idempotency_confirmed,
                        p.breaker_enabled, p.breaker_window_seconds, p.breaker_min_requests,
                        p.breaker_error_enabled, p.breaker_error_ratio, p.breaker_error_status_codes,
@@ -397,7 +415,8 @@ public final class JdbcRouteSnapshotLoader {
                     new RouteSnapshot.McpServerRecord(id, (UUID) rs.getObject("tenant_id"), rs.getString("name"),
                             rs.getString("endpoint"), rs.getString("transport"), rs.getString("status"),
                             rs.getString("acl_mode"), Set.of(), List.of(), null, rs.getString("backend_auth_mode"),
-                            backendSecret, rs.getInt("upstream_timeout_ms")));
+                            backendSecret, rs.getInt("upstream_timeout_ms"), rs.getString("identity_forwarding"),
+                            rs.getString("identity_header_name"), identitySecret(rs)));
             serverLists.put(id, new LinkedHashSet<>());
             toolsByService.put(id, new LinkedHashMap<>());
             if (rs.getObject("retry_enabled") != null) {

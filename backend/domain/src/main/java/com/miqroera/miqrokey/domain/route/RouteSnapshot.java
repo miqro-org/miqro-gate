@@ -426,14 +426,24 @@ public record RouteSnapshot(long version, Instant loadedAt, Map<String, KeyRecor
     public record McpServerRecord(UUID id, UUID tenantId, String name, String endpoint, String transport, String status,
             String aclMode, Set<UUID> serverConsumerIds, List<McpToolRecord> tools, McpResiliencePolicy resilience,
             String backendAuthMode, com.miqroera.miqrokey.domain.crypto.EncryptedSecret encryptedBackendSecret,
-            int upstreamTimeoutMs) {
+            int upstreamTimeoutMs, String identityForwarding, String identityHeaderName,
+            com.miqroera.miqrokey.domain.crypto.EncryptedSecret encryptedIdentitySecret) {
+
+        /**
+         * Whether the gateway writes a signed caller identity on this service's calls
+         * (ADR-0028). OFF for every pre-existing row, so nothing changes until a
+         * service opts in.
+         */
+        public boolean forwardsIdentity() {
+            return McpService.IDENTITY_SIGNED.equals(identityForwarding);
+        }
 
         /** Legacy constructor: no upstream backend credential, default budget. */
         public McpServerRecord(UUID id, UUID tenantId, String name, String endpoint, String transport, String status,
                 String aclMode, Set<UUID> serverConsumerIds, List<McpToolRecord> tools,
                 McpResiliencePolicy resilience) {
             this(id, tenantId, name, endpoint, transport, status, aclMode, serverConsumerIds, tools, resilience,
-                    "VISITOR", null, McpService.DEFAULT_UPSTREAM_TIMEOUT_MS);
+                    "VISITOR", null, McpService.DEFAULT_UPSTREAM_TIMEOUT_MS, McpService.IDENTITY_OFF, null, null);
         }
 
         /** Legacy constructor: per-service upstream budget, no backend credential. */
@@ -441,7 +451,7 @@ public record RouteSnapshot(long version, Instant loadedAt, Map<String, KeyRecor
                 String aclMode, Set<UUID> serverConsumerIds, List<McpToolRecord> tools, McpResiliencePolicy resilience,
                 int upstreamTimeoutMs) {
             this(id, tenantId, name, endpoint, transport, status, aclMode, serverConsumerIds, tools, resilience,
-                    "VISITOR", null, upstreamTimeoutMs);
+                    "VISITOR", null, upstreamTimeoutMs, McpService.IDENTITY_OFF, null, null);
         }
 
         /** Legacy constructor: backend credential, default budget. */
@@ -449,7 +459,17 @@ public record RouteSnapshot(long version, Instant loadedAt, Map<String, KeyRecor
                 String aclMode, Set<UUID> serverConsumerIds, List<McpToolRecord> tools, McpResiliencePolicy resilience,
                 String backendAuthMode, com.miqroera.miqrokey.domain.crypto.EncryptedSecret encryptedBackendSecret) {
             this(id, tenantId, name, endpoint, transport, status, aclMode, serverConsumerIds, tools, resilience,
-                    backendAuthMode, encryptedBackendSecret, McpService.DEFAULT_UPSTREAM_TIMEOUT_MS);
+                    backendAuthMode, encryptedBackendSecret, McpService.DEFAULT_UPSTREAM_TIMEOUT_MS,
+                    McpService.IDENTITY_OFF, null, null);
+        }
+
+        /** Compatibility constructor: no identity passthrough (pre-V74 shape). */
+        public McpServerRecord(UUID id, UUID tenantId, String name, String endpoint, String transport, String status,
+                String aclMode, Set<UUID> serverConsumerIds, List<McpToolRecord> tools, McpResiliencePolicy resilience,
+                String backendAuthMode, com.miqroera.miqrokey.domain.crypto.EncryptedSecret encryptedBackendSecret,
+                int upstreamTimeoutMs) {
+            this(id, tenantId, name, endpoint, transport, status, aclMode, serverConsumerIds, tools, resilience,
+                    backendAuthMode, encryptedBackendSecret, upstreamTimeoutMs, McpService.IDENTITY_OFF, null, null);
         }
 
         public McpServerRecord {
