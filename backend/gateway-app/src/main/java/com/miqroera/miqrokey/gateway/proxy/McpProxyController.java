@@ -43,6 +43,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
@@ -345,20 +346,38 @@ public class McpProxyController {
                 return target.errorResponse(HttpStatus.BAD_GATEWAY, "backend_auth_unavailable",
                         "MCP upstream credential is not available");
             }
-            return Mono.fromCallable(() -> {
+            // The decrypt is mapped on its own so that a credential which cannot be
+            // read stays distinguishable from an upstream which cannot be reached:
+            // attempt(...) rethrows every non-timeout transport failure (SSRF denial,
+            // unresolvable host, refused connection, rejected TLS), and describing
+            // those as "could not be decrypted" sent operators to the encryption
+            // subsystem instead of the network one (#15). Emitting an empty Optional
+            // keeps both outcomes on the success path of this Mono, so the handler
+            // below sees transport failures only.
+            Mono<Optional<String>> decrypted = Mono.fromCallable(() -> {
                 byte[] secret = crypto.decrypt(encrypted, service.tenantId(), service.id());
                 try {
-                    return new String(secret, StandardCharsets.UTF_8);
+                    return Optional.of(new String(secret, StandardCharsets.UTF_8));
                 } finally {
                     com.miqroera.miqrokey.domain.crypto.impl.SecretWiping.clearArray(secret);
                 }
-            }).subscribeOn(credentialDecryptScheduler).flatMap(bearer -> forward(exchange, target, service.endpoint(),
-                    body, context, rpcMethod, toolName, toolHttpMethod, policy, bearer)).onErrorResume(decryptError -> {
-                        log.warn("aigw.mcp.backend_auth_failed service={}: {}", service.name(),
-                                decryptError.getMessage());
-                        record(context, rpcMethod, toolName, McpAccessStatus.UPSTREAM_FAILURE, 502);
-                        return target.errorResponse(HttpStatus.BAD_GATEWAY, "backend_auth_unavailable",
-                                "MCP upstream credential could not be decrypted");
+            }).subscribeOn(credentialDecryptScheduler).onErrorResume(decryptError -> {
+                log.warn("aigw.mcp.backend_auth_failed service={}: {}", service.name(), decryptError.getMessage());
+                record(context, rpcMethod, toolName, McpAccessStatus.UPSTREAM_FAILURE, 502);
+                return Mono.just(Optional.<String>empty());
+            });
+            return decrypted.flatMap(bearer -> bearer.isPresent()
+                    ? forward(exchange, target, service.endpoint(), body, context, rpcMethod, toolName, toolHttpMethod,
+                            policy, bearer.get())
+                    : target.errorResponse(HttpStatus.BAD_GATEWAY, "backend_auth_unavailable",
+                            "MCP upstream credential could not be decrypted"))
+                    .onErrorResume(upstreamError -> {
+                        // The terminal row is already written by attempt(...) before it
+                        // rethrows, so this layer only names the failure.
+                        log.warn("aigw.mcp.upstream_failed requestId={} service={}: {}", context.gatewayRequestId,
+                                service.name(), upstreamError.getMessage());
+                        return target.errorResponse(HttpStatus.BAD_GATEWAY, "mcp_upstream_failed",
+                                "MCP upstream call failed");
                     });
         } catch (Exception e) {
             log.warn("aigw.mcp.invalid envelope service={}: {}", service.name(), e.getMessage());
