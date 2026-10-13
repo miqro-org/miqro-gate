@@ -64,21 +64,42 @@ public class ApiConsumerRepositoryImpl implements ApiConsumerRepository {
     @Override
     @Transactional
     public ApiConsumer insert(ApiConsumer consumer) {
+        return insert(consumer, null);
+    }
+
+    @Override
+    @Transactional
+    public ApiConsumer insertOwnedBy(ApiConsumer consumer, UUID userId) {
+        return insert(consumer, userId);
+    }
+
+    private ApiConsumer insert(ApiConsumer consumer, UUID ownerUserId) {
         jdbc.update("""
                 INSERT INTO api_consumers
                     (id, tenant_id, name, key_digest, key_prefix, status, jwt_public_key_pem,
-                     jwt_key_fingerprint, jwt_key_set_at, version, created_at, updated_at, capabilities, expires_at)
+                     jwt_key_fingerprint, jwt_key_set_at, version, created_at, updated_at, capabilities, expires_at,
+                     user_id)
                 VALUES (:id, :tenantId, :name, :keyDigest, :keyPrefix, :status, :jwtPem, :jwtFingerprint,
-                        :jwtSetAt, 0, now(), now(), :capabilities::jsonb, :expiresAt)
+                        :jwtSetAt, 0, now(), now(), :capabilities::jsonb, :expiresAt, :userId)
                 """, new MapSqlParameterSource("id", consumer.id()).addValue("tenantId", consumer.tenantId())
                 .addValue("name", consumer.name()).addValue("keyDigest", consumer.keyDigest())
                 .addValue("keyPrefix", consumer.keyPrefix()).addValue("status", consumer.status())
                 .addValue("jwtPem", consumer.jwtPublicKeyPem()).addValue("jwtFingerprint", consumer.jwtKeyFingerprint())
                 .addValue("jwtSetAt",
                         consumer.jwtKeySetAt() != null ? java.sql.Timestamp.from(consumer.jwtKeySetAt()) : null)
-                .addValue("capabilities", scopeJson(consumer.capabilities())).addValue("expiresAt",
-                        consumer.expiresAt() != null ? java.sql.Timestamp.from(consumer.expiresAt()) : null));
+                .addValue("capabilities", scopeJson(consumer.capabilities()))
+                .addValue("expiresAt",
+                        consumer.expiresAt() != null ? java.sql.Timestamp.from(consumer.expiresAt()) : null)
+                .addValue("userId", ownerUserId));
         return consumer;
+    }
+
+    @Override
+    public java.util.Optional<ApiConsumer> findByTenantIdAndUserId(UUID tenantId, UUID userId) {
+        return jdbc
+                .query("SELECT * FROM api_consumers WHERE tenant_id = :tenantId AND user_id = :userId",
+                        new MapSqlParameterSource("tenantId", tenantId).addValue("userId", userId), ROW_MAPPER)
+                .stream().findFirst();
     }
 
     @Override

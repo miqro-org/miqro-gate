@@ -133,6 +133,9 @@
 | `POST /api/v1/me/virtual-keys/{id}/enable` | 恢复已停用密钥的路由（#582） |
 | `GET /api/v1/me/usage/summary` | 自己的聚合用量和成本 |
 | `GET /api/v1/me/usage/records` | 自己的明细，受分页和最大时间窗限制 |
+| `GET /api/v1/me/mcp-services` | 自己有权调用的 MCP 服务及其网关地址（ADR-0030，口径与数据面一致） |
+| `GET /api/v1/me/mcp-credential` | 自己的 MCP 凭据元数据（永不含密钥） |
+| `POST /api/v1/me/mcp-credential` | 首次签发自己的 MCP 凭据（幂等）；明文只在本次响应出现 |
 
 创建请求（ADR-0018：一把 Key 可绑定多个项目——`projectIds` 首个为主项目，其授权即 `credentialGrantId`；附加项目由服务端匹配该项目下同产品的最早 ACTIVE 授权，匹配不到则 409 `PROJECT_GRANT_MISSING`。旧字段 `projectId` 仍兼容=单元素）：
 
@@ -416,6 +419,20 @@
   行内保持密文；明文只在控制面解密路径出现，且仅出现在受审计的管理员响应中）。
 
 真实凭证写接口只接受明文输入，响应只返回掩码、指纹、版本和验证状态。凭证测试不得自动把未保存值写入数据库。
+
+### 4.8 我的 MCP 接入 `GET /api/v1/me/mcp-services`、`GET|POST /api/v1/me/mcp-credential`（ADR-0030，issue #1）
+
+普通用户自助接入 MCP 数据面的两件事：**我可以用哪些服务**与**我自己的凭据**。凭据形态是「每用户一个 API 消费者」（ADR-0030）——鉴权、两级 ACL、访问日志、吊销、到期全部复用既有消费者通道，本套端点只补上「消费者归谁」。
+
+**`GET /api/v1/me/mcp-services`** → `McpServiceAccessView` 数组：`{ id, name, mcpUrl, sseUrl, authHint }`。地址由与管理面 `GET /api/v1/admin/mcp-services/{id}/connection` **同一个构造器**（`McpOnboardingService.access`）生成，因此逐字一致。
+
+**可见性口径与数据面同源**：由网关同一套规则判定——`McpAccessPolicy` 的**服务层**，名单取 `mcp_access_grants` 中 `tool_id IS NULL` 的行，**无访问行按 `NONE`**（与路由快照 `LEFT JOIN` 的语义相同）。仅 `ONLINE` 服务参与。**无权调用的服务不出现，也不会以任何形式被命名**。
+
+**`GET /api/v1/me/mcp-credential`** → `MeMcpCredentialView`：`{ id, name, keyPrefix, status, capabilities, createdAt, expiresAt }`，**永不含密钥**。尚未签发 → `404 MCP_CREDENTIAL_NOT_ISSUED`。
+
+**`POST /api/v1/me/mcp-credential`** → `MeMcpCredentialIssueView`：`{ credential, apiKey }`。**幂等**——首次调用创建（`apiKey` 为明文 `mqk_api_…`，**仅此一次**），其后调用返回同一元数据且 `apiKey` 为 `null`，不会另发一把。能力作用域固定 `["mcp:call"]`（最小集）。消费者名派生为 `user:<username>`（租户内唯一；若已被管理员占用 → `409 CONSUMER_NAME_TAKEN`）。写审计 `USER_MCP_CREDENTIAL_ISSUE` 并发布路由快照刷新。
+
+**尚未做的**（ADR-0030 §6 的后续项）：自助**轮换**（换发新密钥）与到期续期；二期把凭据换成短期 JWT（ADR-0011/0017 那条线，**ACL 侧不动**）。
 
 ### 5.0 组织（G5.2）
 

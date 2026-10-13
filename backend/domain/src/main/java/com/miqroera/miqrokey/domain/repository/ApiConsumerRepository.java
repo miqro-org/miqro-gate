@@ -34,4 +34,18 @@ public interface ApiConsumerRepository {
      * without an expiry are never returned.
      */
     List<ApiConsumer> findActiveExpiringBetween(UUID tenantId, Instant from, Instant to);
+
+    /**
+     * The consumer a portal user owns, if one has been issued (ADR-0030). One user
+     * maps to at most one consumer (partial unique index), and this is the only
+     * place that mapping is answered, so every caller that needs it agrees.
+     */
+    Optional<ApiConsumer> findByTenantIdAndUserId(UUID tenantId, UUID userId);
+
+    /**
+     * Inserts a consumer owned by a portal user (ADR-0030). Ownership is written
+     * with the row rather than carried on {@link ApiConsumer}: it is a lookup key
+     * for the self-service surface, and the authentication path never needs it.
+     */
+    ApiConsumer insertOwnedBy(ApiConsumer consumer, UUID userId);
 }
