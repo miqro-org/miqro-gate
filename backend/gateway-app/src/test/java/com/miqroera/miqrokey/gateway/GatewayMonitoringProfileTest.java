@@ -29,10 +29,9 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 @DisplayName("Gateway monitoring profile (Prometheus)")
 class GatewayMonitoringProfileTest {
 
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName
-            .parse("postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94")
-            .asCompatibleSubstituteFor("postgres")).withDatabaseName("miqrokey_test").withUsername("miqrokey_test")
-            .withPassword("miqrokey_test");
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
+            DockerImageName.parse("postgres:17-alpine").asCompatibleSubstituteFor("postgres"))
+            .withDatabaseName("miqrokey_test").withUsername("miqrokey_test").withPassword("miqrokey_test");
     static final Path ENC_KEY_FILE;
     static final Path HMAC_KEY_FILE;
 

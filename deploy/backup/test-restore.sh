@@ -4,7 +4,7 @@
 # and asserts row-count consistency. Requires Docker.
 set -euo pipefail
 
-IMAGE="postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94"
+IMAGE="postgres:17-alpine"
 PASS="miqrokey-test"
 WORK=$(mktemp -d)
 KEY_FILE="$WORK/backup.key"

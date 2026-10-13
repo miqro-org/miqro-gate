@@ -4,8 +4,10 @@
 
 services:
   postgres:
-    # Multi-platform manifest digest reported by Docker Hub for postgres:17.6-alpine.
-    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    # 浮在小版本线内：17-alpine 跟随官方重建自动拿到 alpine 安全更新，
+    # 但不跳大版本——PG 不允许新主版本打开旧主版本初始化的数据目录，
+    # 跳到 latest 会让已有 pgdata 起不来。
+    image: postgres:17-alpine
     container_name: miqrokey-postgres
     restart: unless-stopped
     environment:
