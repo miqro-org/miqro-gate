@@ -185,6 +185,70 @@ public class AdminMcpService {
      * encrypted with the shared key ring (AAD bound to tenant + service id) and
      * never returned again. Summaries carry the mode only.
      */
+    /**
+     * Identity passthrough settings (ADR-0028). Turning it off clears the key: the
+     * row's constraint ties the ciphertext to the mode, so the two always move
+     * together and a disabled service never keeps a secret around.
+     *
+     * <p>
+     * The header name is validated here rather than trusted: it decides which
+     * header the principal is written into, and an operator typo pointing it at
+     * {@code Authorization} would silently displace the backend credential.
+     * </p>
+     */
+    @Transactional
+    public McpService setIdentitySettings(UUID tenantId, UUID adminId, UUID serviceId, String mode, String headerName,
+            String secret, String requestId) {
+        McpService service = find(tenantId, serviceId);
+        if (!(McpService.IDENTITY_OFF.equals(mode) || McpService.IDENTITY_SIGNED.equals(mode))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_IDENTITY_INVALID", "模式必须是 OFF 或 SIGNED。");
+        }
+        String normalizedHeader = null;
+        EncryptedSecret encrypted = null;
+        if (McpService.IDENTITY_SIGNED.equals(mode)) {
+            normalizedHeader = headerName == null ? null : headerName.trim();
+            if (normalizedHeader == null || !normalizedHeader.matches("X-[A-Za-z0-9-]{1,60}")) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_IDENTITY_INVALID",
+                        "开启身份透传时必须提供以 X- 开头的头名（不超过 62 字符）。");
+            }
+            if (isReservedIdentityHeader(normalizedHeader)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_IDENTITY_INVALID", "头名不能占用身份透传的保留头（签名/时间戳/请求号）。");
+            }
+            if (secret == null || secret.isBlank()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_IDENTITY_INVALID", "开启身份透传时必须提供签名密钥。");
+            }
+            if (secret.length() > 4096) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "MCP_IDENTITY_INVALID", "密钥长度超过上限（4096）。");
+            }
+            byte[] plaintext = secret.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            try {
+                encrypted = keyEncryptionProvider.encrypt(plaintext, tenantId, serviceId);
+            } finally {
+                com.miqroera.miqrokey.domain.crypto.impl.SecretWiping.clearArray(plaintext);
+            }
+        }
+        McpService updated = repository.updateIdentitySettings(serviceId, tenantId, mode, normalizedHeader, encrypted);
+        routeRefreshPublisher.publishChanged();
+        auditService.record(tenantId, adminId, "MCP_SERVICE_IDENTITY", "MCP_SERVICE", serviceId,
+                AuditSummaries.summary("name", AuditSummaries.sanitize(service.name()), "mode", mode, "header",
+                        normalizedHeader == null ? "-" : normalizedHeader),
+                requestId);
+        return updated;
+    }
+
+    /**
+     * The three names the gateway writes itself. An operator header colliding with
+     * one of them would be overwritten on the wire, so the setting is refused
+     * instead of silently ignored.
+     */
+    private static boolean isReservedIdentityHeader(String headerName) {
+        return com.miqroera.miqrokey.domain.security.McpIdentitySignature.TIMESTAMP_HEADER.equalsIgnoreCase(headerName)
+                || com.miqroera.miqrokey.domain.security.McpIdentitySignature.SIGNATURE_HEADER
+                        .equalsIgnoreCase(headerName)
+                || com.miqroera.miqrokey.domain.security.McpIdentitySignature.REQUEST_ID_HEADER
+                        .equalsIgnoreCase(headerName);
+    }
+
     @Transactional
     public McpService setBackendAuth(UUID tenantId, UUID adminId, UUID serviceId, String mode, String secret,
             String requestId) {

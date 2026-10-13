@@ -112,6 +112,11 @@ public class GatewayAuthTestConfig {
                 if (ciphertext.length == 3 && ciphertext[0] == 7 && ciphertext[1] == 7 && ciphertext[2] == 7) {
                     return GatewayTestKeys.MCP_SECURED_BACKEND_KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 }
+                // ADR-0028: the identity fixture's MAC key; everything else is refused,
+                // which is what the fail-closed identity case exercises.
+                if (ciphertext.length == 3 && ciphertext[0] == 9 && ciphertext[1] == 9 && ciphertext[2] == 9) {
+                    return GatewayTestKeys.MCP_IDENTITY_SIGNING_KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                }
                 throw new IllegalStateException("test decryptor rejects this ciphertext");
             }
         };

@@ -2,6 +2,7 @@ package com.miqroera.miqrokey.gateway.proxy;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.miqroera.miqrokey.domain.security.McpIdentitySignature;
 import com.miqroera.miqrokey.gateway.GatewayAuthTestConfig;
 import com.miqroera.miqrokey.testing.GatewayTestKeys;
 import com.miqroera.miqrokey.testing.McpMockServer;
@@ -562,6 +563,123 @@ class McpProxyContractTest {
                     .returnResult().getResponseBody();
 
             assertThat(errorType(body)).isEqualTo("backend_auth_unavailable");
+            assertThat(mockServer.capturedRequests()).isEmpty();
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // Identity passthrough (ADR-0028): the gateway signs the caller identity it
+    // authenticated — never one the client claimed.
+    // -------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("Identity passthrough")
+    class IdentityPassthrough {
+
+        private final byte[] signingKey = GatewayTestKeys.MCP_IDENTITY_SIGNING_KEY.getBytes(StandardCharsets.UTF_8);
+
+        /**
+         * The MAC the upstream would compute to verify the call: it has the key and
+         * every covered field arrived on the wire. Reconstructing it here is the check
+         * that the signature is actually verifiable — a signature over a field the
+         * gateway never sends would look fine and be useless.
+         */
+        private String expectedSignature(String serviceName, GatewayTestKeys.ConsumerFixture consumer, String rpcMethod,
+                String toolName, McpMockServer.Request upstream) {
+            String timestamp = upstream.headers().get(McpIdentitySignature.TIMESTAMP_HEADER);
+            String requestId = upstream.headers().get(McpIdentitySignature.REQUEST_ID_HEADER);
+            assertThat(timestamp).isNotNull();
+            assertThat(requestId).isNotNull();
+            return McpIdentitySignature.sign(signingKey, McpIdentitySignature.canonical(serviceName,
+                    consumer.id().toString(), rpcMethod, toolName, Long.parseLong(timestamp), requestId));
+        }
+
+        private McpMockServer.Request callSignedService(GatewayTestKeys.ConsumerFixture consumer, String body) {
+            webTestClient.post().uri("/mcpservers/{service}/mcp", GatewayTestKeys.MCP_IDENTITY_SERVICE)
+                    .header(HttpHeaders.AUTHORIZATION, bearer(consumer)).bodyValue(body).exchange().expectStatus()
+                    .isOk();
+
+            assertThat(mockServer.capturedRequests()).hasSize(1);
+            return mockServer.capturedRequests().get(0);
+        }
+
+        @Test
+        @DisplayName("should sign the authenticated consumer's identity so the upstream can verify it")
+        void shouldSignCallerIdentity() {
+            long before = java.time.Instant.now().getEpochSecond();
+            McpMockServer.Request upstream = callSignedService(GatewayTestKeys.MCP_ALLOWED,
+                    envelope("tools/call", GatewayTestKeys.MCP_TOOL_ECHO));
+            long after = java.time.Instant.now().getEpochSecond();
+
+            assertThat(upstream.headers().get(GatewayTestKeys.MCP_IDENTITY_HEADER))
+                    .isEqualTo(GatewayTestKeys.MCP_ALLOWED.id().toString());
+            assertThat(Long.parseLong(upstream.headers().get(McpIdentitySignature.TIMESTAMP_HEADER))).isBetween(before,
+                    after);
+            assertThat(upstream.headers().get(McpIdentitySignature.SIGNATURE_HEADER))
+                    .isEqualTo(expectedSignature(GatewayTestKeys.MCP_IDENTITY_SERVICE, GatewayTestKeys.MCP_ALLOWED,
+                            "tools/call", GatewayTestKeys.MCP_TOOL_ECHO, upstream));
+        }
+
+        @Test
+        @DisplayName("should overwrite an identity the caller tried to write itself")
+        void shouldOverwriteCallerSuppliedIdentity() {
+            // The headers are built from the authenticated caller and the service's
+            // configuration, never copied from the request: a filter-shaped
+            // implementation would forward these forged values instead.
+            String forgedPrincipal = UUID.randomUUID().toString();
+            webTestClient.post().uri("/mcpservers/{service}/mcp", GatewayTestKeys.MCP_IDENTITY_SERVICE)
+                    .header(HttpHeaders.AUTHORIZATION, bearer(GatewayTestKeys.MCP_ALLOWED))
+                    .header(GatewayTestKeys.MCP_IDENTITY_HEADER, forgedPrincipal)
+                    .header(McpIdentitySignature.TIMESTAMP_HEADER, "1")
+                    .header(McpIdentitySignature.REQUEST_ID_HEADER, "forged-request-id")
+                    .header(McpIdentitySignature.SIGNATURE_HEADER, "deadbeef")
+                    .bodyValue(envelope("tools/call", GatewayTestKeys.MCP_TOOL_ECHO)).exchange().expectStatus().isOk();
+
+            McpMockServer.Request upstream = mockServer.capturedRequests().get(0);
+            assertThat(upstream.headers().get(GatewayTestKeys.MCP_IDENTITY_HEADER))
+                    .isEqualTo(GatewayTestKeys.MCP_ALLOWED.id().toString()).isNotEqualTo(forgedPrincipal);
+            assertThat(upstream.headers().get(McpIdentitySignature.REQUEST_ID_HEADER))
+                    .isNotEqualTo("forged-request-id");
+            assertThat(upstream.headers().get(McpIdentitySignature.SIGNATURE_HEADER))
+                    .isEqualTo(expectedSignature(GatewayTestKeys.MCP_IDENTITY_SERVICE, GatewayTestKeys.MCP_ALLOWED,
+                            "tools/call", GatewayTestKeys.MCP_TOOL_ECHO, upstream));
+        }
+
+        @Test
+        @DisplayName("should sign a method that carries no tool name with an empty field")
+        void shouldSignNonToolMethod() {
+            McpMockServer.Request upstream = callSignedService(GatewayTestKeys.MCP_OUTSIDER,
+                    envelope("tools/list", null));
+
+            assertThat(upstream.headers().get(McpIdentitySignature.SIGNATURE_HEADER)).isEqualTo(expectedSignature(
+                    GatewayTestKeys.MCP_IDENTITY_SERVICE, GatewayTestKeys.MCP_OUTSIDER, "tools/list", null, upstream));
+        }
+
+        @Test
+        @DisplayName("should write no identity headers for a service that has not opted in")
+        void shouldNotSignAnUnoptedService() {
+            webTestClient.post().uri("/mcpservers/{service}/mcp", GatewayTestKeys.MCP_OPEN_SERVICE)
+                    .header(HttpHeaders.AUTHORIZATION, bearer(GatewayTestKeys.MCP_OUTSIDER))
+                    .bodyValue(envelope("tools/list", null)).exchange().expectStatus().isOk();
+
+            McpMockServer.Request upstream = mockServer.capturedRequests().get(0);
+            assertThat(upstream.headers()).doesNotContainKeys(GatewayTestKeys.MCP_IDENTITY_HEADER,
+                    McpIdentitySignature.TIMESTAMP_HEADER, McpIdentitySignature.SIGNATURE_HEADER,
+                    McpIdentitySignature.REQUEST_ID_HEADER);
+        }
+
+        @Test
+        @DisplayName("should fail closed with identity_unavailable when the MAC key cannot be decrypted")
+        void shouldFailClosedWhenTheKeyIsUndecryptable() {
+            byte[] body = webTestClient.post()
+                    .uri("/mcpservers/{service}/mcp", GatewayTestKeys.MCP_IDENTITY_BROKEN_SERVICE)
+                    .header(HttpHeaders.AUTHORIZATION, bearer(GatewayTestKeys.MCP_OUTSIDER))
+                    .bodyValue(envelope("tools/list", null)).exchange().expectStatus().isEqualTo(502).expectBody()
+                    .returnResult().getResponseBody();
+
+            // Sending an unsigned call to an upstream that demands a signature reads as
+            // anonymous rather than broken — the gateway must not do it.
+            assertThat(errorType(body)).isEqualTo("identity_unavailable");
             assertThat(mockServer.capturedRequests()).isEmpty();
         }
     }

@@ -2,7 +2,7 @@
 
 - 状态：**Accepted（2026-09-05）**——决策依据：所有者指示「按阿里云/腾讯云怎么做的、参考他们的文档做」；实际实现 #154 已按腾讯 doc 135906（MCP 调用代理形态）/134890（两级 ACL）落地，即下方决策点 1 的推荐选项 **B**（消费者 API Key 进网关快照 + 服务/工具两级 ACL 判定）。决策点 2 按推荐（streamable HTTP 入站最小集、SSE 二期）；决策点 3 挂点（`McpUpstreamClient` 出口）随 F12/F13/F15 实施。
 - 日期：2026-09-04（状态化：2026-09-05）
-- 关联：[feature-backlog F01](../feature-backlog.md)（接线）、F11（路由规则，配置面已 DONE）、F12-F15（运行时护栏/日志，全部依赖 F01）、[ADR-0002](0002-transparent-proxy.md)（协议透明）、[ADR-0010](0010-consumer-api-key-billing.md)/[0011](0011-consumer-jwt-authentication.md)（消费者凭据）、腾讯 doc 134890/134818（ACL/模型探测）、raw 03（MCP quickstart）
+- 关联：[feature-backlog F01](../feature-backlog.md)（接线）、F11（路由规则，配置面已 DONE）、F12-F15（运行时护栏/日志，全部依赖 F01）、[ADR-0002](0002-transparent-proxy.md)（协议透明）、[ADR-0010](0010-consumer-api-key-billing.md)/[0011](0011-consumer-jwt-authentication.md)（消费者凭据）、[ADR-0028](0028-mcp-upstream-identity-passthrough.md)（上游身份透传——本 ADR 的加注，见文末）、腾讯 doc 134890/134818（ACL/模型探测）、raw 03（MCP quickstart）
 
 ## 现状（配置面已就绪，调用面未接线）
 
@@ -50,4 +50,17 @@ ACL 名单语义（doc 134890）基于 **API 消费者**（`api_consumers`），
 - 决策点 1 → **B**（#154 已实现：`mqk_api_` 消费者 Key SHA-256 digest 进网关只读快照，路由面按服务名解析 → 服务级 ACL → `tools/call` 工具覆盖与启停判定）。
 - 决策点 2 → 入站形态 `/mcpservers/{serviceName}/mcp`（#154）；transport=STREAMABLE_HTTP 最小集，SSE 传输维持二期；会话无状态透传（无分布式会话缓存）。
 - 决策点 3 → usage 请求级元数据行口径维持未定，暂以 F15 元数据日志（不存正文）先行；F12/F13 默认关闭挂 `McpUpstreamClient` 出口（Q3 队列）。
+
+## 加注（2026-10-13，[ADR-0028](0028-mcp-upstream-identity-passthrough.md)：上游身份透传）
+
+本 ADR 的转发契约多了一组**默认关闭**的权威头（`identity_forwarding=SIGNED` 时才写）：主体（消费者 id，写在服务配置的头名里）、
+请求号、时间戳、HMAC-SHA256 签名。三点加注，均不修订本 ADR 的任何原有决策：
+
+1. **同一个构造点**。新头加在 `McpProxyController.forward()` 既有的**白名单构造**处（ADR-0028 §1.1），入站头依旧一个都不透传；
+   ADR-0028 的信任模型完全建立在这个不变量上，因此该不变量在代码里落成注释，并有契约测试固定（客户端自带的同名头被覆盖，伪造签名不成立）。
+2. **签名不含请求正文**。签名覆盖面是 `service/principal/rpcMethod/toolName/timestamp/requestId`，决策点 3 与本 ADR
+   「不读 args 正文」的边界一致：网关仍只解析信封的 `method` 与 `params.name`。
+3. **密钥的走法与 V38 后端凭据同路径**。ADR-0028 §5 写的「密钥不进快照」指**明文**：明文只在网关进程内、在
+   `credentialDecryptScheduler` 上解密、签名后立即清零；**密文**随路由快照下发（网关热路径不同步查控制面，CLAUDE.md §3），
+   与 `backend_auth_mode` 的既有先例逐字一致。任何读面（列表/详情/审计）都不返回密钥。
 

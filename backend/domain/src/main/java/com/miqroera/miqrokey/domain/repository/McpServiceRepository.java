@@ -67,13 +67,6 @@ public interface McpServiceRepository {
     McpService updateIdentitySettings(UUID id, UUID tenantId, String mode, String headerName,
             EncryptedSecret encryptedSecret);
 
-    /**
-     * The MAC key for identity passthrough — write-only. No read surface returns
-     * it, and it is deliberately not part of the route snapshot's service record:
-     * the snapshot carries the ciphertext for the gateway to decrypt at call time.
-     */
-    Optional<EncryptedSecret> findIdentitySecret(UUID id, UUID tenantId);
-
     /** Sets the per-service data-plane upstream budget (I20, doc 135906). */
     McpService updateUpstreamTimeout(UUID id, UUID tenantId, int upstreamTimeoutMs);
 }

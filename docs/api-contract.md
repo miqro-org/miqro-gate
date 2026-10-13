@@ -961,6 +961,7 @@ MCP Server 注册、手动上下线与健康检查（对齐腾讯「MCP 上下�
   `VISITOR` 清除已存密钥；`API_KEY` 必填 `secret`（≤4096）。密钥**只写不读**：任何读面（列表/详情/审计）永不返回；
   存储 AES-GCM 加密（AAD 绑定 tenant+service）；网关向上游注入固定 `Authorization: Bearer <secret>`；变更即时生效（快照刷新）。
   `400 MCP_BACKEND_AUTH_INVALID`；审计 `MCP_SERVICE_BACKEND_AUTH`（摘要含 name+mode，永不含 secret） |
+| `PUT /api/v1/admin/mcp-services/{id}/identity` | **上游身份透传（ADR-0028）**：body `{"mode":"OFF\|SIGNED","headerName"?,"secret"?}`——`OFF`（默认）不向上游写任何身份头并清除已存密钥；`SIGNED` 必填 `headerName`（`X-` 开头、≤62 字符、不得占用三个保留头）与 `secret`（≤4096，签名密钥）。密钥**只写不读**：任何读面（列表/详情/审计）永不返回；AES-GCM 加密（AAD 绑定 tenant+service）；`400 MCP_IDENTITY_INVALID`；审计 `MCP_SERVICE_IDENTITY`（摘要含 name+mode+header，永不含 secret）；变更即时快照刷新 |
 | `PUT /api/v1/admin/mcp-services/{id}/upstream-timeout` | **数据面上游预算（I20，腾讯 raw 03「超时时间」）**：body `{"upstreamTimeoutMs"}`（1000..600000，默认 60000ms）——数据面每次上游尝试的超时；预算耗尽 → **504 `mcp_upstream_timeout`** 错误信封（`mcp_access_log` 记 UPSTREAM_FAILURE/504）。越界 `400 MCP_TIMEOUT_INVALID`；启用慢调用熔断时不得 ≤ 已配置慢阈值（`400 RESILIENCE_SLOW_EXCEEDS_TIMEOUT`）。审计 `MCP_SERVICE_UPSTREAM_TIMEOUT`，即时快照刷新。 |
 | `GET /api/v1/admin/mcp-services/{id}/traffic?hours=24` | **被动健康（真实流量视图，#397，矩阵 §3 候选落地）**：`mcp_access_log` 按服务窗口聚合——`totalCalls/forwarded/denied（被拒：ACL/工具不可用/信封非法）/failed（UPSTREAM_FAILURE+CIRCUIT_OPEN，口径同 #338）`、`failureRate`（failed/(forwarded+failed)；无健康相关流量为 null）、`lastCallAt`/`lastFailureAt`（可空）、`topFailingTools`（失败工具 top ≤5）；`hours` ∈ [1,168]（越界 400 `PARAM_INVALID`）；服务不存在/跨租户 404 `MCP_SERVICE_NOT_FOUND`；空窗口零值视图（不 404）；只读、不阻断。 |
 | `GET /api/v1/admin/mcp-services/{id}/connection` | **接入信息（#685，腾讯 MCP 接入指引「接入地址」）**：返回 `{ serviceId, name, mcpUrl, sseUrl, authHint }`——由网关 base URL + `/mcpservers/{name}/mcp`（及 `/sse`）生成，与数据面路由逐字一致；`authHint` 仅描述凭据形态（消费者 API Key/JWT + `mcp:call` 作用域），不含任何密钥。注意：ACL 面占用 `/{id}/access`，本端点位于 `/{id}/connection`。 |
@@ -968,10 +969,17 @@ MCP Server 注册、手动上下线与健康检查（对齐腾讯「MCP 上下�
 
 - 接入地址：https、无 userinfo/query/fragment（`MCP_ENDPOINT_INVALID` 400）；重名 `409 MCP_SERVICE_NAME_TAKEN`
 - **健康检查**：`McpHealthChecker` 定时（`miqrokey.mcp.health-cycle-ms` 默认 15s）遍历 ONLINE 服务，按各自间隔探测 `endpoint + checkPath`（GET，2xx 计健康）；连续失败达 `failThreshold` → `UNHEALTHY`，连续成功达 `recoverThreshold` → `HEALTHY`；OFFLINE 服务不被探测
-- **错误码**：`MCP_SERVICE_NOT_FOUND`（404）、`MCP_SERVICE_NAME_TAKEN`（409）、`MCP_STATUS_UNCHANGED`（409）、`MCP_STATUS_INVALID`（400）、`MCP_ENDPOINT_INVALID`（400）
+- **错误码**：`MCP_SERVICE_NOT_FOUND`（404）、`MCP_SERVICE_NAME_TAKEN`（409）、`MCP_STATUS_UNCHANGED`（409）、`MCP_STATUS_INVALID`（400）、`MCP_ENDPOINT_INVALID`（400）、`MCP_IDENTITY_INVALID`（400）
 - **上游后端鉴权语义（#320）**：`VISITOR`（默认）不向上游携带任何凭据；`API_KEY` 由网关按请求解密注入
   `Authorization: Bearer <secret>`（密文随路由快照下发，**明文永不出网关进程**，用后清零）；解密不可用/失败 → 上游零请求、
   `502 backend_auth_unavailable`（fail-closed）。消费者凭据任何情况下不透传给上游。
+- **身份透传语义（ADR-0028）**：`SIGNED` 时，网关在转发前用服务密钥签一份**网关已认证的调用者身份**。主体（消费者 id）写在服务自己的
+  `headerName`；三个固定伴随头 `X-MiqroKey-Identity-Request-Id`、`X-MiqroKey-Identity-Timestamp`（epoch 秒）、
+  `X-MiqroKey-Identity-Signature`（小写 hex HMAC-SHA256）。签名串为 6 行换行拼接
+  `serviceName\nprincipal\nrpcMethod\ntoolName\ntimestamp\nrequestId`，请求未携带的字段写**空行**（不是省略），
+  且**不含请求正文**（正文不入网关解析，ADR-0013）；上游按建议 ±60s 窗口校验（本版不维护 nonce 缓存，重放由窗口 + TLS 限定）。
+  请求号在签名串内，因此也随头下发——否则上游无法重建待验字符串。这些头由网关**构造**、不是对入站头的过滤：
+  客户端自带的同名头一律被覆盖，伪造签名不成立。密钥解密不可用/失败 → 上游零请求、`502 identity_unavailable`（fail-closed）。
 
 ### 5.17 MCP Tools 管理（P3.5，对标腾讯 AI 网关 Tools 管理）
 

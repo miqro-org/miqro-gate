@@ -25,9 +25,29 @@ public final class McpMockServer implements AutoCloseable {
 
     private static final String DEFAULT_RESPONSE = "{\"jsonrpc\":\"2.0\",\"result\":{},\"id\":1}";
 
-    /** One inbound request. */
-    public record Request(String method, String path, String sessionId, String authorization, String xApiKey,
-            String contentType, byte[] body) {
+    /**
+     * One inbound request. {@code headers} carries every header as sent (names
+     * case-insensitive, first value each), so tests can assert on headers whose
+     * names are configuration rather than constants — the identity-passthrough
+     * principal header, for one; the named accessors cover the fixed ones.
+     */
+    public record Request(String method, String path, java.util.Map<String, String> headers, byte[] body) {
+
+        public String sessionId() {
+            return headers.get("Session-Id");
+        }
+
+        public String authorization() {
+            return headers.get("Authorization");
+        }
+
+        public String xApiKey() {
+            return headers.get("x-api-key");
+        }
+
+        public String contentType() {
+            return headers.get("Content-Type");
+        }
     }
 
     /** A scripted next response (retry/breaker scenarios). */
@@ -92,11 +112,13 @@ public final class McpMockServer implements AutoCloseable {
         try (InputStream in = exchange.getRequestBody()) {
             body = in.readAllBytes();
         }
-        requests.add(new Request(exchange.getRequestMethod(), exchange.getRequestURI().getPath(),
-                exchange.getRequestHeaders().getFirst("Session-Id"),
-                exchange.getRequestHeaders().getFirst("Authorization"),
-                exchange.getRequestHeaders().getFirst("x-api-key"),
-                exchange.getRequestHeaders().getFirst("Content-Type"), body));
+        java.util.Map<String, String> headers = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        exchange.getRequestHeaders().forEach((name, values) -> {
+            if (!values.isEmpty()) {
+                headers.put(name, values.get(0));
+            }
+        });
+        requests.add(new Request(exchange.getRequestMethod(), exchange.getRequestURI().getPath(), headers, body));
         if (delayMillis > 0) {
             try {
                 Thread.sleep(delayMillis);

@@ -95,6 +95,27 @@ public class AdminMcpServiceController {
                 requestId(httpReq));
     }
 
+    /**
+     * Identity passthrough (ADR-0028): whether the gateway writes a signed caller
+     * identity on this service's calls, the header it goes into, and the key it is
+     * signed with. Write-only — no read surface ever returns the key, and the
+     * service row carries the mode and header only.
+     */
+    @PutMapping("/{serviceId}/identity")
+    public McpService setIdentity(@PathVariable UUID serviceId, @RequestBody IdentityRequest body,
+            HttpServletRequest httpReq) {
+        var user = userContext.getUser();
+        return mcpService.setIdentitySettings(user.tenantId(), user.id(), serviceId, body.mode(), body.headerName(),
+                body.secret(), requestId(httpReq));
+    }
+
+    /**
+     * Identity passthrough settings (ADR-0028): {@code OFF}, or {@code SIGNED} with
+     * a header name and key.
+     */
+    public record IdentityRequest(String mode, String headerName, String secret) {
+    }
+
     private static String requestId(HttpServletRequest request) {
         String header = request.getHeader("X-Request-Id");
         return header != null && !header.isBlank() ? header : UUID.randomUUID().toString();

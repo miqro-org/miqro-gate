@@ -42,7 +42,9 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
@@ -329,36 +331,29 @@ public class McpProxyController {
                     ? servicePolicy.withRetry(tool.retry())
                     : servicePolicy;
             String toolHttpMethod = tool == null ? null : tool.method();
-            if (!"API_KEY".equals(service.backendAuthMode())) {
-                return forward(exchange, target, service.endpoint(), body, context, rpcMethod, toolName, toolHttpMethod,
-                        policy, null);
-            }
-            // Upstream backend credential (#320, Tencent raw 03): decrypt the
-            // snapshot ciphertext off the event loop (first use may load key
-            // material from disk) and attach Authorization: Bearer upstream.
-            // Unavailable/undecryptable credentials fail closed before any
-            // upstream request.
-            com.miqroera.miqrokey.domain.crypto.KeyEncryptionProvider crypto = keyEncryptionProvider.getIfAvailable();
-            com.miqroera.miqrokey.domain.crypto.EncryptedSecret encrypted = service.encryptedBackendSecret();
-            if (crypto == null || encrypted == null) {
-                record(context, rpcMethod, toolName, McpAccessStatus.UPSTREAM_FAILURE, 502);
-                return target.errorResponse(HttpStatus.BAD_GATEWAY, "backend_auth_unavailable",
-                        "MCP upstream credential is not available");
-            }
-            return Mono.fromCallable(() -> {
-                byte[] secret = crypto.decrypt(encrypted, service.tenantId(), service.id());
-                try {
-                    return new String(secret, StandardCharsets.UTF_8);
-                } finally {
-                    com.miqroera.miqrokey.domain.crypto.impl.SecretWiping.clearArray(secret);
-                }
-            }).subscribeOn(credentialDecryptScheduler).flatMap(bearer -> forward(exchange, target, service.endpoint(),
-                    body, context, rpcMethod, toolName, toolHttpMethod, policy, bearer)).onErrorResume(decryptError -> {
-                        log.warn("aigw.mcp.backend_auth_failed service={}: {}", service.name(),
-                                decryptError.getMessage());
+            // Both things the upstream call needs beyond the caller's own request — the
+            // backend bearer and the signed identity — are produced off the event loop:
+            // each decrypt may load key material from disk, and the MAC runs with that
+            // key in hand. forward() then only writes headers.
+            return Mono.fromCallable(() -> upstreamAuth(service, context, rpcMethod, toolName))
+                    .subscribeOn(credentialDecryptScheduler)
+                    .flatMap(auth -> forward(exchange, target, service.endpoint(), body, context, rpcMethod, toolName,
+                            toolHttpMethod, policy, auth.bearer(), auth.identityHeaders()))
+                    // Scoped to the failure this step can produce, so an unreachable upstream
+                    // is not described as an authentication problem (#15).
+                    .onErrorResume(UpstreamAuthUnavailable.class, unavailable -> {
+                        log.warn("aigw.mcp.auth_failed service={} code={}: {}", service.name(), unavailable.code,
+                                unavailable.getMessage());
                         record(context, rpcMethod, toolName, McpAccessStatus.UPSTREAM_FAILURE, 502);
-                        return target.errorResponse(HttpStatus.BAD_GATEWAY, "backend_auth_unavailable",
-                                "MCP upstream credential could not be decrypted");
+                        return target.errorResponse(HttpStatus.BAD_GATEWAY, unavailable.code, unavailable.getMessage());
+                    }).onErrorResume(upstreamError -> {
+                        // SSRF denial, unresolvable host, refused connection, rejected TLS:
+                        // attempt(...) wrote the terminal row before rethrowing, so this
+                        // layer only names the failure.
+                        log.warn("aigw.mcp.upstream_failed requestId={} service={}: {}", context.gatewayRequestId,
+                                service.name(), upstreamError.getMessage());
+                        return target.errorResponse(HttpStatus.BAD_GATEWAY, "mcp_upstream_failed",
+                                "MCP upstream call failed");
                     });
         } catch (Exception e) {
             log.warn("aigw.mcp.invalid envelope service={}: {}", service.name(), e.getMessage());
@@ -369,7 +364,7 @@ public class McpProxyController {
 
     private Mono<Void> forward(ServerWebExchange exchange, ResponseTarget target, String endpoint, byte[] body,
             CallContext context, String rpcMethod, String toolName, String toolHttpMethod, McpResiliencePolicy policy,
-            String upstreamBearer) {
+            String upstreamBearer, Map<String, String> identityHeaders) {
         ServerHttpRequest in = exchange.getRequest();
         HttpHeaders headers = new HttpHeaders();
         MediaType contentType = in.getHeaders().getContentType();
@@ -387,6 +382,15 @@ public class McpProxyController {
             // consumed at the gateway and never forwarded.
             headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + upstreamBearer);
         }
+        // Caller identity (ADR-0028), constructed here from the authenticated caller
+        // and
+        // the service's own configuration — never copied from the inbound request. That
+        // is
+        // what makes the header trustworthy, and it is why this method must keep
+        // building
+        // an allow-list instead of filtering the headers it received: a filter-shaped
+        // version would let a client write the identity itself.
+        identityHeaders.forEach(headers::set);
         String bucket = bucketFor(toolName, rpcMethod);
         McpCircuitBreaker breaker = policy.breakerEnabled()
                 ? circuitRegistry.get(context.service.id(), bucket, policy).breaker()
@@ -515,6 +519,111 @@ public class McpProxyController {
         accessLogSink.record(new McpAccessLogEntry(UUID.randomUUID(), context.service.tenantId(), context.service.id(),
                 context.service.name(), context.consumer.id(), context.consumer.name(), rpcMethod, toolName, status,
                 httpStatus, context.gatewayRequestId, Instant.now(), context.sessionId, ttfbMs));
+    }
+
+    /**
+     * Everything the upstream call needs beyond the caller's own request: the
+     * backend bearer, when the service has one, and the signed identity headers,
+     * when identity passthrough is on.
+     *
+     * <p>
+     * Runs off the event loop — each decrypt may load key material from disk, and
+     * the MAC runs with that key in hand. Both fail closed: a service configured
+     * with a backend credential must not be called without it, and a service
+     * configured to forward identity must not be called without it either. Sending
+     * an unsigned call to an upstream that demands a signature is worse than a
+     * clear 502 — it looks anonymous rather than broken.
+     * </p>
+     */
+    private UpstreamAuth upstreamAuth(RouteSnapshot.McpServerRecord service, CallContext context, String rpcMethod,
+            String toolName) {
+        String bearer = null;
+        if ("API_KEY".equals(service.backendAuthMode())) {
+            com.miqroera.miqrokey.domain.crypto.KeyEncryptionProvider crypto = keyEncryptionProvider.getIfAvailable();
+            com.miqroera.miqrokey.domain.crypto.EncryptedSecret encrypted = service.encryptedBackendSecret();
+            if (crypto == null || encrypted == null) {
+                throw new UpstreamAuthUnavailable("backend_auth_unavailable",
+                        "MCP upstream credential is not available");
+            }
+            byte[] secret = decryptServiceSecret(crypto, encrypted, service, "backend_auth_unavailable",
+                    "MCP upstream credential is not available");
+            try {
+                bearer = new String(secret, StandardCharsets.UTF_8);
+            } finally {
+                com.miqroera.miqrokey.domain.crypto.impl.SecretWiping.clearArray(secret);
+            }
+        }
+        Map<String, String> identityHeaders = service.forwardsIdentity()
+                ? signIdentity(service, context, rpcMethod, toolName)
+                : Map.of();
+        return new UpstreamAuth(bearer, identityHeaders);
+    }
+
+    /**
+     * Decrypts a per-service secret under the shared key ring. A ciphertext this
+     * deployment's key ring cannot open is a configuration fact, not a transient
+     * fault, so it is named here rather than left to the generic upstream handler.
+     */
+    private static byte[] decryptServiceSecret(com.miqroera.miqrokey.domain.crypto.KeyEncryptionProvider crypto,
+            com.miqroera.miqrokey.domain.crypto.EncryptedSecret encrypted, RouteSnapshot.McpServerRecord service,
+            String code, String message) {
+        try {
+            return crypto.decrypt(encrypted, service.tenantId(), service.id());
+        } catch (RuntimeException e) {
+            throw new UpstreamAuthUnavailable(code, message);
+        }
+    }
+
+    /**
+     * The identity headers (ADR-0028): the principal under the service's own header
+     * name, plus the request id, timestamp and signature under fixed ones. The MAC
+     * covers the request's metadata — never the body, which ADR-0013 keeps the
+     * gateway out of.
+     */
+    private Map<String, String> signIdentity(RouteSnapshot.McpServerRecord service, CallContext context,
+            String rpcMethod, String toolName) {
+        String headerName = service.identityHeaderName();
+        com.miqroera.miqrokey.domain.crypto.KeyEncryptionProvider crypto = keyEncryptionProvider.getIfAvailable();
+        com.miqroera.miqrokey.domain.crypto.EncryptedSecret encrypted = service.encryptedIdentitySecret();
+        if (crypto == null || encrypted == null || headerName == null || headerName.isBlank()) {
+            throw new UpstreamAuthUnavailable("identity_unavailable", "MCP upstream identity is not available");
+        }
+        byte[] key = decryptServiceSecret(crypto, encrypted, service, "identity_unavailable",
+                "MCP upstream identity is not available");
+        try {
+            String principal = context.consumer.id().toString();
+            long timestamp = Instant.now().getEpochSecond();
+            String canonical = com.miqroera.miqrokey.domain.security.McpIdentitySignature.canonical(service.name(),
+                    principal, rpcMethod, toolName, timestamp, context.gatewayRequestId);
+            Map<String, String> headers = new LinkedHashMap<>();
+            headers.put(headerName, principal);
+            headers.put(com.miqroera.miqrokey.domain.security.McpIdentitySignature.REQUEST_ID_HEADER,
+                    context.gatewayRequestId);
+            headers.put(com.miqroera.miqrokey.domain.security.McpIdentitySignature.TIMESTAMP_HEADER,
+                    Long.toString(timestamp));
+            headers.put(com.miqroera.miqrokey.domain.security.McpIdentitySignature.SIGNATURE_HEADER,
+                    com.miqroera.miqrokey.domain.security.McpIdentitySignature.sign(key, canonical));
+            return Map.copyOf(headers);
+        } finally {
+            com.miqroera.miqrokey.domain.crypto.impl.SecretWiping.clearArray(key);
+        }
+    }
+
+    /** What the gateway sends upstream besides the caller's own request. */
+    private record UpstreamAuth(String bearer, Map<String, String> identityHeaders) {
+    }
+
+    /**
+     * An upstream-auth precondition failed; carries the wire code the caller sees.
+     */
+    private static final class UpstreamAuthUnavailable extends RuntimeException {
+
+        private final String code;
+
+        UpstreamAuthUnavailable(String code, String message) {
+            super(message);
+            this.code = code;
+        }
     }
 
     private static final class CallContext {

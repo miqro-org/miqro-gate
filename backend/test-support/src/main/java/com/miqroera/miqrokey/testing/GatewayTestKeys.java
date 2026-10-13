@@ -280,6 +280,20 @@ public final class GatewayTestKeys {
     /** Plaintext the test decryptor yields for the secured fixture's ciphertext. */
     public static final String MCP_SECURED_BACKEND_KEY = "test-mcp-backend-key";
 
+    /** ADR-0028: SIGNED identity passthrough, with a test-decryptable MAC key. */
+    public static final String MCP_IDENTITY_SERVICE = "identity-demo";
+    /**
+     * ADR-0028: SIGNED identity whose key the test decryptor rejects (fail-closed
+     * probe).
+     */
+    public static final String MCP_IDENTITY_BROKEN_SERVICE = "identity-broken";
+    /** The per-service header the identity fixtures write the principal into. */
+    public static final String MCP_IDENTITY_HEADER = "X-Demo-Principal";
+    /**
+     * Plaintext the test decryptor yields for the identity fixtures' ciphertext.
+     */
+    public static final String MCP_IDENTITY_SIGNING_KEY = "test-mcp-identity-key";
+
     /** One API-consumer fixture: self-consistent presented key + digest. */
     public record ConsumerFixture(UUID id, String name, String presentedKey, java.util.List<String> capabilities,
             java.time.Instant expiresAt, String jwtPublicKeyPem) {
@@ -393,7 +407,37 @@ public final class GatewayTestKeys {
         services.put(MCP_GATED_SERVICE, gated);
         services.put(MCP_SECURED_SERVICE, secured);
         services.put(MCP_BROKEN_SERVICE, broken);
+        services.put(MCP_IDENTITY_SERVICE,
+                identity(MCP_IDENTITY_SERVICE, endpoint, signableIdentitySecret(), policies, upstreamTimeoutsMs));
+        services.put(MCP_IDENTITY_BROKEN_SERVICE, identity(MCP_IDENTITY_BROKEN_SERVICE, endpoint,
+                undecryptableIdentitySecret(), policies, upstreamTimeoutsMs));
         return services;
+    }
+
+    /** The ciphertext the test decryptor turns into the identity signing key. */
+    private static EncryptedSecret signableIdentitySecret() {
+        return new EncryptedSecret(new byte[]{9, 9, 9}, new byte[]{5, 5}, "v1");
+    }
+
+    /**
+     * A ciphertext nothing the gateway holds can decrypt — the identity path must
+     * fail closed.
+     */
+    private static EncryptedSecret undecryptableIdentitySecret() {
+        return new EncryptedSecret(new byte[]{0, 0, 0}, new byte[]{0, 0}, "v1");
+    }
+
+    /**
+     * ADR-0028 fixture: an open service (any consumer may call it) that signs the
+     * caller identity into {@link #MCP_IDENTITY_HEADER}.
+     */
+    private static RouteSnapshot.McpServerRecord identity(String name, String endpoint, EncryptedSecret secret,
+            Map<String, McpResiliencePolicy> policies, Map<String, Integer> upstreamTimeoutsMs) {
+        return new RouteSnapshot.McpServerRecord(serviceId(name), TENANT_ID, name, endpoint, "STREAMABLE_HTTP",
+                "ONLINE", "NONE", Set.of(), List.of(tool(MCP_TOOL_ECHO, "ENABLED", null, Set.of(), "GET")),
+                policies.get(name), "VISITOR", null,
+                upstreamTimeoutsMs.getOrDefault(name, McpService.DEFAULT_UPSTREAM_TIMEOUT_MS),
+                McpService.IDENTITY_SIGNED, MCP_IDENTITY_HEADER, secret);
     }
 
     private static UUID serviceId(String name) {

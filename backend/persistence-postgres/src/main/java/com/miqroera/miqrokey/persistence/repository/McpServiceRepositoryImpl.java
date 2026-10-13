@@ -135,22 +135,6 @@ public class McpServiceRepositoryImpl implements McpServiceRepository {
     }
 
     @Override
-    public Optional<EncryptedSecret> findIdentitySecret(UUID id, UUID tenantId) {
-        return jdbc.query("""
-                SELECT identity_secret_ciphertext, identity_secret_nonce, identity_secret_key_version
-                FROM mcp_services
-                WHERE id = :id AND tenant_id = :tenantId
-                """, new MapSqlParameterSource("id", id).addValue("tenantId", tenantId), (rs, rowNum) -> {
-            byte[] ciphertext = rs.getBytes("identity_secret_ciphertext");
-            if (ciphertext == null) {
-                return null; // no identity secret configured — Spring skips a null row
-            }
-            return new EncryptedSecret(ciphertext, rs.getBytes("identity_secret_nonce"),
-                    rs.getString("identity_secret_key_version"));
-        }).stream().findFirst();
-    }
-
-    @Override
     @Transactional
     public McpService updateIdentitySettings(UUID id, UUID tenantId, String mode, String headerName,
             EncryptedSecret encryptedSecret) {

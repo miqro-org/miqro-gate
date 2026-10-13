@@ -8,13 +8,13 @@
 --
 -- Shape mirrors V38's backend credential on purpose — same AES-GCM triple, same
 -- "mode and ciphertext must agree" constraint. The MAC key is a secret, so it is
--- write-only: no read surface returns it, and it is never carried in the route
--- snapshot (only its non-secret settings are).
+-- write-only: no read surface returns it, and only the ciphertext reaches the
+-- route snapshot (the gateway decrypts it per call and wipes the plaintext).
 --
 -- SIGNED additionally requires a header name: the principal goes into that header,
--- and the two companions (timestamp, signature) are derived from it. Without a name
--- there is nowhere to write the identity, so the combination is rejected here
--- rather than at request time.
+-- and the three companions (request id, timestamp, signature) carry fixed names.
+-- Without a name there is nowhere to write the identity, so the combination is
+-- rejected here rather than at request time.
 --
 -- NOTE ON VERSION: this file takes V74 because the open ADR-0030 branch takes V73.
 -- Whoever merges second must renumber (the repository has done this before — see

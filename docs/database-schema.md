@@ -442,6 +442,13 @@ fail-closed）——标准 MCP 服务无 HTTP 健康路径时的协议原生探�
 
 MCP Server 管理：`name`、`description`、`endpoint`（https）、`transport`（`STREAMABLE_HTTP|SSE`）、`status`（`ONLINE|OFFLINE`，手动切换，健康检查不覆盖）、`health_status`（`UNKNOWN|HEALTHY|UNHEALTHY`）、`health_checked_at`、`consecutive_failures/successes`、检查配置（`check_interval_seconds`/`check_timeout_seconds`/`fail_threshold`/`recover_threshold`/`check_path`）。唯一 `(tenant_id, name)`；`(tenant_id, health_status)` 索引（探活列表）。
 
+V74（ADR-0028）新增上游身份透传：`identity_forwarding varchar(16)`（`OFF`（默认，行为不变）|`SIGNED`）、
+`identity_header_name varchar(64)`、密文三列（`identity_secret_ciphertext bytea`/`identity_secret_nonce bytea`/
+`identity_secret_key_version varchar(32)`）与 `identity_secret_updated_at timestamptz`；约束 `ck_mcp_services_identity_secret`
+保证 SIGNED ⇔ 密文三列齐备（关闭即清密钥）、`ck_mcp_services_identity_header` 保证 SIGNED ⇒ 头名非空。
+MAC 密钥复用 `KeyEncryptionProvider`（AES-GCM，AAD 绑定 tenant+service），**只写不读**：任何读面不返回，
+只有密文进路由快照（数据面按调用解密、用后清零）。头名合规（`X-` 前缀、不占保留头）在管理 API 层校验。
+
 ### `mcp_tools` (V21，P3.5)
 
 MCP Tools 管理：`tool_name`（AI Agent 调用唯一标识，snake_case）、`description`、`method`（`GET|POST|PUT|DELETE|PATCH`）、`path`（以 `/` 开头）、`status`（`ENABLED|DISABLED`）、绑定 `mcp_service_id`（ON DELETE CASCADE）。唯一 `(tenant_id, mcp_service_id, tool_name)`；`mcp_service_id` 索引。
