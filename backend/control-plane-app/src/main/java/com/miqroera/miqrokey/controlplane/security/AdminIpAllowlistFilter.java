@@ -60,7 +60,7 @@ public class AdminIpAllowlistFilter extends OncePerRequestFilter {
     /** Billing channel and the guarded one-time bootstrap stay reachable. */
     private static boolean isExempt(HttpServletRequest request) {
         String path = RequestPaths.lookupPath(request);
-        return path.startsWith("/api/v1/billing/") || path.equals("/api/v1/auth/bootstrap");
+        return RequestPaths.isUnder(path, "/api/v1/billing") || path.equals("/api/v1/auth/bootstrap");
     }
 
     private boolean allowlisted(HttpServletRequest request) {

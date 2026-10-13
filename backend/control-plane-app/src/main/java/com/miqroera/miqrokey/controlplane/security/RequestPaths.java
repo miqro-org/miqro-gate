@@ -50,6 +50,24 @@ public final class RequestPaths {
     }
 
     /**
+     * Whether {@code path} is {@code prefix} itself or lies beneath it, matched on
+     * a path-segment boundary.
+     *
+     * <p>
+     * {@code startsWith(prefix + "/")} covers the children but silently drops the
+     * prefix itself, and that case is not hypothetical: a controller declaring
+     * {@code @RequestMapping("/api/v1/admin")} serves the bare prefix as soon as a
+     * method is added without a sub-path. What the miss costs depends on the
+     * predicate's polarity — a deny-by-default gate misses it as fail-open, while
+     * an exemption list misses it as fail-closed (the bare path gets restricted
+     * when it should not be). Both directions were present in this package.
+     * </p>
+     */
+    public static boolean isUnder(String path, String prefix) {
+        return path.equals(prefix) || path.startsWith(prefix + "/");
+    }
+
+    /**
      * Removes {@code ;...} up to the next {@code /} (the '/' itself is kept),
      * mirroring {@code UrlPathHelper}'s semicolon-content rule — applied to the
      * decoded path so percent-encoded semicolons cannot slip through.

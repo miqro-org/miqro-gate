@@ -35,8 +35,8 @@ public class RoleInterceptor implements HandlerInterceptor {
         // the raw URI keeps semicolon content and would skip this gate.
         String path = RequestPaths.lookupPath(request);
 
-        // Deny-by-default: all /api/v1/admin/** require SYSTEM_ADMIN
-        if (path.startsWith("/api/v1/admin/")) {
+        // Deny-by-default: /api/v1/admin and /api/v1/admin/** require SYSTEM_ADMIN
+        if (RequestPaths.isUnder(path, "/api/v1/admin")) {
             if (!userContext.isAuthenticated()) {
                 sendProblem(response, 401, "UNAUTHORIZED", "Authentication required", resolveRequestId(request));
                 return false;
