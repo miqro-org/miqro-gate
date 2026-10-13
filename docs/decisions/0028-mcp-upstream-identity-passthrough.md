@@ -1,7 +1,7 @@
 # ADR-0028：MCP 上游身份透传——网关注入可信调用者身份
 
 - 日期：2026-10-12
-- 状态：**Proposed（待所有者拍板）**——本文只做选项与代价留档，**拍板前不实现**。拍板后二选一收口：选择实施 → 本文转 Accepted 并按下节「建议实施顺序」立项；选择维持不传身份 → 本文转 Accepted，结论 = 维持现状 + 记录 §1.3 的归属校验缺口由 MCP 侧自行承担。
+- 状态：**Accepted（2026-10-13）**——按 §9「Accepted 裁决记录」执行：信任模型取 **C（签名注入，HMAC-SHA256）**，principal 取 `consumer_id`，头名按服务可配，签名覆盖面不含请求体，时窗 ±60s，开关默认 OFF。实施按 §8 立项。
 - 效力：**无**。Proposed 状态不修订任何产品决策。落地后本 ADR 是 [ADR-0013](0013-mcp-proxy-wiring-proposal.md) 的**加注而非取代**：ADR-0013 已把 MCP 入站定为白名单构造转发、且网关在该路径上已经替换 `Authorization`（`McpProxyController.java:385-388`），本 ADR 只是在同一构造点新增一个权威头。
 - 关联：[ADR-0013](0013-mcp-proxy-wiring-proposal.md)（MCP 调用代理接线——本文的直接基线）、[ADR-0010](0010-consumer-api-key-billing.md)/[0011](0011-consumer-jwt-authentication.md)（消费者凭据，即本 ADR 的 principal 空间）、[ADR-0002](0002-transparent-proxy.md)（协议透明——边界讨论见 §7.1）、`docs/api-contract.md` §5.16（mcp-services）、`docs/decisions/0013-*.md:23,51`（网关不解析 args 正文的既有边界）。
 - 触发事件：把外部 MCP 服务 **slurm-skill**（`git.miqroera.com/intership/slurm-skill`）接入本网关。该 MCP 已实现 `IDENTITY_MODE=agent` 身份接收端并 fail-closed（缺头即 401），正等网关注入；而其**作业归属校验**（调用者只能查阅/取消自己的作业）在网关侧无处安放（§1.3），没有可信 principal 就无法实现。
@@ -233,11 +233,11 @@ C 把判断权交回 MCP，且失败模式是显式的。
 6. slurm-skill 侧：`identity.py` 加验签与时窗校验（HMAC 用 stdlib）；部署切 `IDENTITY_MODE=agent`。
 7. 更新 `docs/decisions/0013-*.md` 的相关段落（加注、不取代）、`docs/security.md`、`docs/api-contract.md`。
 
-## 9. 未决（需 owner/leader）
+## 9. Accepted 裁决记录（2026-10-13）
 
-- 决策点 1：C（签名）还是 B（仅网络隔离）还是 D（mTLS）？——**这是本 ADR 唯一必须拍板才能动工的点**。
-- 决策点 2：头名用"按服务可配"还是先硬编码 slurm 的头名（前者多一次迁移，后者多一次改网关）？
-- 决策点 3：签名覆盖面是否接受"不含请求体摘要"（即接受"签名不绑定 args"这一残留）？
-- 决策点 2.1：是否把"MCP 容器被攻破"纳入威胁模型？若是，改 HMAC 为 Ed25519 并接受 Python 侧新依赖。
-- §3.3 展示名头：要不要（可整体砍掉）。
-- 时窗取值（建议 ±60s）。
+- **决策点 1（信任模型）→ C：签名注入。** 理由：B 把安全性完全押在部署正确性上，而部署正确性恰恰是最容易被妥协的一环；D（mTLS）相对 C 的增量价值低于其工程量（principal 仍需另传）。**签名算法取 HMAC-SHA256**（§2.1 的威胁模型里，攻破 MCP 容器者已持有 SLURM SSH 私钥，非对称方案买到的增量很低，却要在上游仓库新增一个 Python 依赖）。
+- **决策点 2（principal 与头名）**：principal 取 **`consumer_id`**（36 字符、落在上游 `_SAFE_PRINCIPAL_ID` 的 ASCII 白名单内）；头名**按服务可配**（`mcp_services` 新增列，**追加迁移，不改 V20**）——一次性小迁移换掉长期的每上游一改。
+- **§3.3 展示名头 → 砍掉。** 上游审计的可读性由两侧按 `request_id` 对齐即可满足，不值得多一个头。
+- **决策点 3（签名覆盖面）→ 采 §4 的规范化串**：`service_name / principal_id / rpc_method / tool_name / timestamp / gateway_request_id`，**刻意不含请求体摘要**（避免诱导读正文，与 ADR-0013「不解析 args」的边界冲突）。**时窗 ±60s**；**不加 nonce 缓存**——时窗内的在途重放已被 TLS 覆盖，为它引入跨副本有状态组件不值得；该残留风险保留在 §4。
+- **开关默认 OFF**；两端上线顺序按 §5 且**不能反**：网关先开注入（上游仍 `shared`，多余的头被忽略）→ 确认头到达且验签通过 → 上游切 `IDENTITY_MODE=agent`。
+- 实施按 §8「建议实施顺序」立项。
