@@ -351,9 +351,9 @@ class WebhookAlertApiIntegrationTest {
 
         // Release the reference, then the delete succeeds (no new endpoint needed).
         mockMvc.perform(delete("/api/v1/admin/alert-rules/" + ruleId).cookie(sessionCookie, csrfCookie)
-                .header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
         mockMvc.perform(delete("/api/v1/admin/webhooks/" + endpointId).cookie(sessionCookie, csrfCookie)
-                .header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
     }
 
     @Test

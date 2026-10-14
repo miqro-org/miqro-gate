@@ -6,6 +6,7 @@ import com.miqroera.miqrokey.controlplane.service.AdminOrgService.TeamMemberView
 import com.miqroera.miqrokey.domain.model.Team;
 import com.miqroera.miqrokey.domain.model.TeamStatus;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -57,12 +59,14 @@ public class AdminTeamController {
     }
 
     @PostMapping("/{teamId}/members")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void addMember(@PathVariable UUID teamId, @RequestBody TeamMemberRequest body) {
         var admin = userContext.getUser();
         orgService.addTeamMember(admin.tenantId(), admin.id(), teamId, body.userId());
     }
 
     @DeleteMapping("/{teamId}/members/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
     public void removeMember(@PathVariable UUID teamId, @PathVariable UUID userId) {
         var admin = userContext.getUser();
         orgService.removeTeamMember(admin.tenantId(), admin.id(), teamId, userId);

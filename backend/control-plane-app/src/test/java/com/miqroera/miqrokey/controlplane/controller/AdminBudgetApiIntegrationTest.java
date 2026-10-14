@@ -305,7 +305,7 @@ class AdminBudgetApiIntegrationTest {
 
         // Release the reference, then this month's budget goes too.
         mockMvc.perform(delete("/api/v1/admin/alert-rules/" + ruleId).cookie(sessionCookie, csrfCookie)
-                .header("X-CSRF-Token", csrfToken)).andExpect(status().isOk());
+                .header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
         mockMvc.perform(delete("/api/v1/admin/projects/" + projectId + "/budget?month=" + month)
                 .cookie(sessionCookie, csrfCookie).header("X-CSRF-Token", csrfToken)).andExpect(status().isNoContent());
     }

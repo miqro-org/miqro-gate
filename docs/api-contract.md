@@ -12,6 +12,7 @@
 - 写请求支持 `Idempotency-Key`；重复键和不同请求体返回 `409 IDEMPOTENCY_CONFLICT`。（**预留：当前版本未实现**，#734——重复提交目前会重复创建；幂等语义的实现/移除随对应功能变更另行立项。）
 - 可更新资源返回 `version`，更新时提交 `If-Match`；版本冲突返回 `412 VERSION_CONFLICT`。（**#734 更正为实现现状**：`version` 为**请求体字段**、随写请求提交；并发冲突由服务端乐观锁检出并映射为 `409` + 端点级错误码（如 `SERVICE_STATE_CONFLICT`「并发状态变更，请刷新后重试」）。`If-Match` 请求头与 `412 VERSION_CONFLICT` 为**预留，当前版本未实现**。）
 - 管理写接口校验 `Origin` 和 CSRF token。推理入口不使用浏览器 Cookie，不做 CSRF。
+- 成功且**无响应体**的操作一律返回 `204 No Content`，不得写成 `200` + 空体：门户的 fetch 封装只对 `204` 短路，其余状态码一律按 JSON 解析，空体会让解析抛错、被当成网络故障（页面显示"无法连接到 MiQroGate 服务"），而操作其实已经生效。
 - `/api/v1/**` 不接受供应商 API Key 或 Virtual Key 作为门户身份。
 
 ## 2. 错误格式
@@ -425,16 +426,16 @@
 | `POST /api/v1/admin/users` | 创建用户（`username`/`displayName`/`role`）；返回一次性临时密码（仅本次出现） |
 | `PATCH /api/v1/admin/users/{id}` | 更新显示名与/或状态（`displayName` 非空白 ≤200；`status`：ACTIVE/DISABLED/LOCKED；至少一项，空请求 → 400 `USER_UPDATE_EMPTY`，显示名非法 → 400 `DISPLAY_NAME_INVALID`；禁用/锁定即撤销全部会话；SYSTEM_ADMIN 不可禁用 → 409 `ADMIN_NOT_DISABLEABLE`；#614） |
 | `POST /api/v1/admin/users/{id}/reset-password` | 重置密码 + 撤销全部会话；返回新临时密码（仅本次） |
-| `POST /api/v1/admin/users/{id}/revoke-sessions` | 撤销该用户全部会话 |
+| `POST /api/v1/admin/users/{id}/revoke-sessions` | 撤销该用户全部会话（`204`） |
 | `GET /api/v1/admin/users/{id}/project-memberships` | 用户所属项目列表（`[{projectId, projectCode, projectName, projectStatus, joinedAt}]`，按 code 排序）——管理员「加入项目」快捷入口数据面（F-REG 闭环）；用户不存在 `404 USER_NOT_FOUND` |
 | `GET/POST /api/v1/admin/teams`、`PATCH /{id}` | 团队列表/创建/更新 |
-| `GET/POST /api/v1/admin/teams/{id}/members`、`DELETE /members/{userId}` | 团队成员管理 |
+| `GET/POST /api/v1/admin/teams/{id}/members`、`DELETE /members/{userId}` | 团队成员管理（新增/移除成功 `204`） |
 | `GET/POST /api/v1/admin/projects`、`PATCH /{id}` | 项目列表/创建（`code` 唯一，冲突 → 409 `PROJECT_CODE_TAKEN`；保留 code「UNATTRIBUTED」（未归属桶，精确匹配）→ 409 `PROJECT_CODE_RESERVED`，#1166）/更新 |
-| `GET/POST /api/v1/admin/projects/{id}/members`、`DELETE /members/{userId}` | 项目成员管理 |
-| `GET/PUT/DELETE /api/v1/admin/unattributed-policy` | **未归属策略（V57，#647，Spec §7.3）**：`PUT {credentialId, providerProductId?, models?}`（产品缺省从凭证订阅推导；凭证须 ACTIVE，不匹配 → `400 UNAUTH_CREDENTIAL_PRODUCT_MISMATCH`；模型按 #498 目录语义校验 → `400 MODEL_NOT_IN_CATALOG`；凭证不存在/停用 → `404 CREDENTIAL_NOT_FOUND`）。首次配置懒建「未归属」系统项目（`projects.system=true`，不可被建 Key 选择 → `400 PROJECT_NOT_SELECTABLE`）；若该租户已存在同 code 的**非系统**项目（历史占用），配置显式失败 → `409 BUCKET_PROJECT_CONFLICT`（不静默收养；该占用行需先由平台运维在数据库改名或删除，产品面暂无改 code/删项目入口，#1166）。凭证被项目授权引用时响应带 `warning`（建议专用凭证，不阻断）。`DELETE` 仅删策略（桶项目保留供历史用量引用）。GET 未配置返回 `{configured:false}`。审计 `UNATTRIBUTED_POLICY_SET/CLEARED`，变更即刷快照。 |
-| `GET/POST /api/v1/admin/projects/{id}/repositories`、`DELETE /{mappingId}` | **CAA Project Registry（V56，#639）**：仓库→项目映射。`repoKey` 接受 `github.com/acme/rocket` / `https://github.com/acme/rocket(.git)` / `git@github.com:acme/rocket.git` / 裸 `acme/rocket`（默认 github.com），统一规范化为小写 `host/owner/repo`；租户内唯一，重复 → `409 REPO_KEY_TAKEN`；格式非法 → `400 REPO_KEY_INVALID`；项目不存在 → `404 PROJECT_NOT_FOUND`；删除不存在 → `404 REPOSITORY_NOT_FOUND`。写操作审计 `REPOSITORY_ADD`/`REPOSITORY_REMOVE`。Agent 经 §7 的 `/v1/context-registry` 消费 |
+| `GET/POST /api/v1/admin/projects/{id}/members`、`DELETE /members/{userId}` | 项目成员管理（新增/移除成功 `204`） |
+| `GET/PUT/DELETE /api/v1/admin/unattributed-policy` | **未归属策略（V57，#647，Spec §7.3）**：`PUT {credentialId, providerProductId?, models?}`（产品缺省从凭证订阅推导；凭证须 ACTIVE，不匹配 → `400 UNAUTH_CREDENTIAL_PRODUCT_MISMATCH`；模型按 #498 目录语义校验 → `400 MODEL_NOT_IN_CATALOG`；凭证不存在/停用 → `404 CREDENTIAL_NOT_FOUND`）。首次配置懒建「未归属」系统项目（`projects.system=true`，不可被建 Key 选择 → `400 PROJECT_NOT_SELECTABLE`）；若该租户已存在同 code 的**非系统**项目（历史占用），配置显式失败 → `409 BUCKET_PROJECT_CONFLICT`（不静默收养；该占用行需先由平台运维在数据库改名或删除，产品面暂无改 code/删项目入口，#1166）。凭证被项目授权引用时响应带 `warning`（建议专用凭证，不阻断）。`DELETE` 仅删策略（桶项目保留供历史用量引用），成功 `204`。GET 未配置返回 `{configured:false}`。审计 `UNATTRIBUTED_POLICY_SET/CLEARED`，变更即刷快照。 |
+| `GET/POST /api/v1/admin/projects/{id}/repositories`、`DELETE /{mappingId}` | **CAA Project Registry（V56，#639）**：仓库→项目映射。`repoKey` 接受 `github.com/acme/rocket` / `https://github.com/acme/rocket(.git)` / `git@github.com:acme/rocket.git` / 裸 `acme/rocket`（默认 github.com），统一规范化为小写 `host/owner/repo`；租户内唯一，重复 → `409 REPO_KEY_TAKEN`；格式非法 → `400 REPO_KEY_INVALID`；项目不存在 → `404 PROJECT_NOT_FOUND`；删除不存在 → `404 REPOSITORY_NOT_FOUND`；删除成功 `204`。写操作审计 `REPOSITORY_ADD`/`REPOSITORY_REMOVE`。Agent 经 §7 的 `/v1/context-registry` 消费 |
 | `GET/POST /api/v1/admin/grants` | Grant 列表/创建（`projectId`×`providerProductId`×`credentialId` + `models[]`；重复 → 409 `GRANT_EXISTS`；凭证订阅产品与声明产品不一致 → 400 `GRANT_CREDENTIAL_PRODUCT_MISMATCH`（数据库触发器同约束兜底）；`models[]` 必须存在于该产品 `model_catalog` → 否则 400 `MODEL_NOT_IN_CATALOG`） |
-| `GET/POST /api/v1/admin/grants/{id}/models`、`DELETE /{id}` | 模型范围查询/替换（替换同样校验目录，400 `MODEL_NOT_IN_CATALOG`）；禁用 Grant |
+| `GET/POST /api/v1/admin/grants/{id}/models`、`DELETE /{id}` | 模型范围查询/替换（替换同样校验目录，400 `MODEL_NOT_IN_CATALOG`）；禁用 Grant（`204`） |
 
 错误码：`USER_NOT_FOUND`/`TEAM_NOT_FOUND`/`PROJECT_NOT_FOUND`/`GRANT_NOT_FOUND`（404）、`USERNAME_TAKEN`/`PROJECT_CODE_TAKEN`/`PROJECT_CODE_RESERVED`/`BUCKET_PROJECT_CONFLICT`/`GRANT_EXISTS`（409）、`USERNAME_INVALID`/`USER_UPDATE_EMPTY`/`DISPLAY_NAME_INVALID`（400）、`ADMIN_NOT_DISABLEABLE`（409）。所有写操作写审计事件（`USER_CREATE`/`USER_UPDATE`/`USER_PASSWORD_RESET`/`USER_SESSIONS_REVOKED`/`TEAM_*`/`PROJECT_*`/`GRANT_*`）。
 
@@ -731,7 +732,7 @@ name 与 url host，**secret 永不入摘要**）、`BUDGET_PUT/DELETE`（projec
 | `POST /api/v1/admin/webhooks` | 创建（`name`/`url`/`secret`/`timeoutMs`）；URL 经 SSRF 门控，Secret 加密存储且永不返回 |
 | `GET /api/v1/admin/webhooks` / `/{id}` | 列表/详情（无 Secret） |
 | `PATCH /api/v1/admin/webhooks/{id}` | 更新（name/enabled/timeoutMs） |
-| `DELETE /api/v1/admin/webhooks/{id}` | 删除。**I21 删除前置依赖检查**（腾讯模型 API 删除语义）：仍被告警规则引用的端点**不再静默脱钩**（原 SET NULL 会让规则悄悄失去投递目标），返回 `409 RESOURCE_IN_USE` + problem 体附 `dependencies: [{type:"ALERT_RULE", id, name, detail:"已启用\|已停用"}]`；先删除或改配这些规则后再删端点。机器面（`/admin-api/webhooks/{id}`）同语义 |
+| `DELETE /api/v1/admin/webhooks/{id}` | 删除（成功 `204`）。**I21 删除前置依赖检查**（腾讯模型 API 删除语义）：仍被告警规则引用的端点**不再静默脱钩**（原 SET NULL 会让规则悄悄失去投递目标），返回 `409 RESOURCE_IN_USE` + problem 体附 `dependencies: [{type:"ALERT_RULE", id, name, detail:"已启用\|已停用"}]`；先删除或改配这些规则后再删端点。机器面（`/admin-api/webhooks/{id}`）同语义 |
 | `POST /api/v1/admin/webhooks/{id}/test` | 发送 HMAC 签名测试载荷，返回上游 HTTP 状态或脱敏错误 |
 | `GET /api/v1/admin/webhooks/{id}/deliveries` | 投递历史 |
 
@@ -746,7 +747,7 @@ name 与 url host，**secret 永不入摘要**）、`BUDGET_PUT/DELETE`（projec
 | `POST /api/v1/admin/alert-rules` | 创建（`name`/`type`/`threshold`/`dedupeMinutes`/`webhookEndpointId`/`scopeJson`） |
 | `GET /api/v1/admin/alert-rules` / `/{id}` | 列表/详情 |
 | `PATCH /api/v1/admin/alert-rules/{id}` | 更新（含 enabled、scopeJson） |
-| `DELETE /api/v1/admin/alert-rules/{id}` | 删除 |
+| `DELETE /api/v1/admin/alert-rules/{id}` | 删除（`204`） |
 
 规则类型：`USAGE_MISSING_RATE`（1h 内 usage_missing 占比）、`UPSTREAM_ERROR_RATE`（1h 内非 2xx 占比）、`BALANCE_UNAVAILABLE`（1h 内 UNAVAILABLE 配额快照数）、`USAGE_SURGE`（当前 1h 事件数 / 前一 1h 比率）、**`USAGE_QUEUE_SATURATION`**（F07/#245，V60：网关用量队列近 1h **丢失的事件条数**——绝对值计数，不是比例。事实由网关在队列饱和丢弃时按窗口写 `gateway_queue_signal`（仅 `dropped > 0` 才写行，零丢弃不写行也不触发）；队列是全进程唯一的，故事实固定承载于默认 seed 租户，**只有该租户的规则能评估到**：其他租户的规则聚合到零行，`COALESCE(SUM(dropped), 0)` 恒为 `0`，而评估为「`value >= threshold` 才触发」，故其他租户的规则在**正阈值**下恒不触发，也读不到任何其他租户的数字；阈值 `<= 0`（服务端目前不校验）会在每个去重窗口以 `value = 0` 触发一次，属退化配置，与其余计数型指标行为一致。阈值示例：`1` = 1 小时内丢 1 条即告警）、**`UPSTREAM_RATE_LIMITED`**（ADR-0026 选项 D/#706，V71：近 1h **上游返回 429 的条数**，计数而非比例——比例已在 `UPSTREAM_ERROR_RATE` 里，而「上游在限流」与「上游在故障」是两类事故、处置不同；只统计上游真的答了 429 的请求，**网关自身因配额拒绝的请求不触达上游、无上游状态码，不计入**。阈值示例：`20` = 1 小时内被上游限流 20 次即告警）、**`KEY_REQUEST_RATE`**（ADR-0026 选项 D/#706，V71：近 1h **单把密钥的最高请求条数**（`GROUP BY virtual_key_id` 取最大，平手按键 id 定序以保证确定性）——租户级 `USAGE_SURGE` 说不出「是谁在猛打」，而这条信号只有在**可归因**时才可行动：触发事件在 `payload_json` 里带该密钥的 `keyId`/`keyName`/`requests`（随事件持久化，重试投递时按存储的 payload 重放）。阈值示例：`1000` = 任意单把密钥 1 小时内超 1000 次即告警。两者的 per-key 维度都在 **SQL 聚合**里，不做指标标签（高基数红线，`GatewayMetricsFilter`），评估仍在控制面、热路径零改动（ADR-0026 §6 的约束）、**`BUDGET_THRESHOLD`**（项目当月预算水位 %，`scopeJson: {"projectId": "…"}` 必填且项目需存在，否则 `400 SCOPE_INVALID`）、**`QUOTA_THRESHOLD`**（配额规则当前窗口水位 %，`scopeJson: {"quotaRuleId": "…"}` 必填且配额规则需存在，否则 `400 SCOPE_INVALID`；规则停用即不评估）。评估周期 `miqrokey.alerts.evaluation-interval-ms`（默认 5min）；密钥到期事件型 `ADMIN_API_KEY_EXPIRING`（默认关——需管理员建规则；按 key + 日期去重；检查周期 `miqrokey.alerts.admin-key-expiry-interval-ms` 默认 6h）；`BUDGET_THRESHOLD` 按（规则 × 月份）、`QUOTA_THRESHOLD` 按（规则 × 配额重置窗口，日/周/月随规则周期）去重（同窗口仅告警一次），其余按（规则 × 小时桶）去重；仅首个事件触发投递；投递失败指数退避重试最多 3 次。错误码：`ALERT_RULE_NOT_FOUND`（404）、`ALERT_TYPE_INVALID`（400）、`SCOPE_INVALID`（400）。
 
@@ -1124,7 +1125,7 @@ Server 级（谁能调用整个服务）+ Tool 级（谁可调用某工具）ACL
 | `POST /api/v1/admin/mcp-services/{serviceId}/route-rules` | 新建（默认启用）：`{ "name", "description"?, "priority"?, "pathMode"?, "pathValue"?, "hostMode"?, "hostValue"?, "methods"?, "headers"? }` |
 | `PATCH /api/v1/admin/mcp-services/{serviceId}/route-rules/{ruleId}` | 全量替换可编辑字段（见上） |
 | `POST /api/v1/admin/mcp-services/{serviceId}/route-rules/{ruleId}/status?status=ENABLED\|DISABLED` | 启用/禁用（幂等） |
-| `DELETE /api/v1/admin/mcp-services/{serviceId}/route-rules/{ruleId}` | 删除自定义路由 |
+| `DELETE /api/v1/admin/mcp-services/{serviceId}/route-rules/{ruleId}` | 删除自定义路由（`204`） |
 
 - 名称：1–64 字符、同一服务唯一（`409 ROUTE_NAME_TAKEN`）、`default` 保留（`400 ROUTE_NAME_RESERVED`）；描述 ≤200。
 - 错误码：`ROUTE_NOT_FOUND`（404）、`ROUTE_NAME_TAKEN`（409）、`ROUTE_NAME_RESERVED`（400）、`ROUTE_NAME_INVALID`（400）、`ROUTE_DESCRIPTION_INVALID`（400）、`ROUTE_PRIORITY_INVALID`（400）、`ROUTE_PATH_INVALID`（400）、`ROUTE_MATCHER_INVALID`（400）、`ROUTE_PATTERN_INVALID`（400）、`ROUTE_METHOD_INVALID`（400）、`ROUTE_HEADERS_TOO_MANY`（400）、`ROUTE_HEADER_INVALID`（400）、`ROUTE_MATCH_CONFLICT`（409）、`ROUTE_DEFAULT_IMMUTABLE`（409）、`ROUTE_STATUS_INVALID`（400）；服务不存在 `404 MCP_SERVICE_NOT_FOUND`。
