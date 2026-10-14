@@ -89,6 +89,7 @@ const regularNav: NavItem[] = [
   { name: 'usage', label: '用量', icon: ChartBarIcon },
   { name: 'skills', label: '技能库', icon: AppIcon },
   { name: 'model-approvals', label: '模型申请', icon: EditIcon },
+  { name: 'my-mcp', label: '我的 MCP 接入', icon: ToolsIcon },
   { name: 'profile', label: '资料', icon: UserIcon },
   { name: 'help', label: '帮助', icon: BookOpenIcon },
 ];

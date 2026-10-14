@@ -30,12 +30,15 @@ import type {
   CredentialView,
   ExportTask,
   InternalServiceView,
+  IssuedMcpCredential,
   McpAccessView,
+  McpCredentialView,
   McpRouteRule,
   McpServiceView,
   McpToolView,
   MeGrantsResponse,
   ModelApprovalPage,
+  MyMcpServicesView,
   MePlazaView,
   ModelApprovalView,
   PriceSnapshotView,
@@ -179,6 +182,33 @@ export function enableVirtualKey(id: string): Promise<VirtualKeyView> {
 
 export function myGrants(): Promise<MeGrantsResponse> {
   return get<MeGrantsResponse>('/api/v1/me/grants');
+}
+
+// ---- self-service MCP credential & discovery (ADR-0028 option A, #30 / #32) ----
+
+/** Services and tools this user's portal credential may call — the data plane's own ACL. */
+export function myMcpServices(): Promise<MyMcpServicesView> {
+  return get<MyMcpServicesView>('/api/v1/me/mcp-services');
+}
+
+/** Credential metadata; never the key itself (plaintext only on issue / rotate). */
+export function myMcpCredential(): Promise<McpCredentialView> {
+  return get<McpCredentialView>('/api/v1/me/mcp-credential');
+}
+
+/** First issuance — 201; the plaintext key is returned here and nowhere else. */
+export function issueMyMcpCredential(): Promise<IssuedMcpCredential> {
+  return post<IssuedMcpCredential>('/api/v1/me/mcp-credential');
+}
+
+/** In-place rotation: same consumer row (so ACL grants survive), new key material. */
+export function rotateMyMcpCredential(): Promise<IssuedMcpCredential> {
+  return post<IssuedMcpCredential>('/api/v1/me/mcp-credential/rotate');
+}
+
+/** Disables the credential (idempotent); a later rotate brings it back ACTIVE. */
+export function revokeMyMcpCredential(): Promise<McpCredentialView> {
+  return post<McpCredentialView>('/api/v1/me/mcp-credential/revoke');
 }
 
 // ---- self-service model approvals (model-approval workflow) ----

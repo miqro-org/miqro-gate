@@ -28,6 +28,7 @@ const REGULAR_NAV = [
   'usage',
   'skills',
   'model-approvals',
+  'my-mcp',
   'profile',
   'help',
 ];

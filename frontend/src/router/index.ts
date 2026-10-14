@@ -91,6 +91,14 @@ const router = createRouter({
           meta: { title: '模型申请' },
         },
         {
+          // ADR-0028 option A self-service MCP surface (#32) — a regular-user
+          // page: it only reads/writes the caller's own /api/v1/me/mcp-* state.
+          path: 'my-mcp',
+          name: 'my-mcp',
+          component: () => import('@/views/next/NextMyMcpView.vue'),
+          meta: { title: '我的 MCP 接入' },
+        },
+        {
           path: 'users',
           name: 'users',
           component: () => import('@/views/next/NextUsersView.vue'),

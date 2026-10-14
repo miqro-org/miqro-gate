@@ -74,6 +74,15 @@ export type McpServiceVerifyView = components['schemas']['McpServiceVerifyView']
 export type McpToolView = components['schemas']['McpTool'];
 export type McpAccessLogEntry = components['schemas']['McpAccessLogEntry'];
 export type McpResiliencePolicy = components['schemas']['McpResiliencePolicy'];
+// ADR-0028 option A self-service surface (#30 backend, #32 page). The `/me`
+// views are the backend's own nested records, whose schema names collide with
+// the admin registry aliases above (`McpServiceView` there = schemas['McpService']),
+// so they get distinct FE names here.
+export type MyMcpServicesView = components['schemas']['ServicesView'];
+export type MyMcpServiceView = components['schemas']['McpServiceView'];
+export type MyMcpToolView = components['schemas']['McpToolView'];
+export type McpCredentialView = components['schemas']['McpCredentialView'];
+export type IssuedMcpCredential = components['schemas']['IssuedCredential'];
 // auth envelope (issue #265): content schemas from springdoc annotations on
 // /api/v1/auth — LoginResponse/UserResponse previously had no schema at all.
 export type LoginResponse = components['schemas']['LoginResponse'];
