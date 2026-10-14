@@ -324,6 +324,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/mcp-credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["credential"];
+        put?: never;
+        post: operations["issue"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/mcp-credential/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rotate_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/mcp-credential/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["revoke_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/register": {
         parameters: {
             query?: never;
@@ -1277,7 +1325,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["rotate_1"];
+        post: operations["rotate_2"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1309,7 +1357,7 @@ export interface paths {
         };
         get: operations["list_19"];
         put?: never;
-        post: operations["issue"];
+        post: operations["issue_1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1325,7 +1373,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["revoke_1"];
+        post: operations["revoke_2"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1836,6 +1884,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["models_1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/mcp-services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["services"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3278,6 +3342,24 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
+        IssuedCredential: {
+            credential?: components["schemas"]["McpCredentialView"];
+            apiKey?: string;
+            shownOnce?: boolean;
+        };
+        McpCredentialView: {
+            issued?: boolean;
+            /** Format: uuid */
+            consumerId?: string;
+            name?: string;
+            keyPrefix?: string;
+            status?: string;
+            capabilities?: string[];
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            expiresAt?: string;
+        };
         RegisterRequest: {
             username: string;
             displayName?: string;
@@ -3916,26 +3998,26 @@ export interface components {
             null?: boolean;
             float?: boolean;
             number?: boolean;
+            container?: boolean;
+            missingNode?: boolean;
+            object?: boolean;
+            pojo?: boolean;
+            short?: boolean;
+            int?: boolean;
+            long?: boolean;
+            binary?: boolean;
+            string?: boolean;
+            double?: boolean;
             /** @deprecated */
             textual?: boolean;
             boolean?: boolean;
-            binary?: boolean;
-            pojo?: boolean;
-            short?: boolean;
-            double?: boolean;
-            int?: boolean;
-            string?: boolean;
-            long?: boolean;
-            object?: boolean;
-            container?: boolean;
-            missingNode?: boolean;
-            bigDecimal?: boolean;
+            floatingPointNumber?: boolean;
+            valueNode?: boolean;
+            integralNumber?: boolean;
+            bigInteger?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            integralNumber?: boolean;
-            valueNode?: boolean;
-            bigInteger?: boolean;
-            floatingPointNumber?: boolean;
+            bigDecimal?: boolean;
             embeddedValue?: boolean;
         };
         ImportResult: {
@@ -4533,6 +4615,28 @@ export interface components {
             /** Format: uuid */
             keyId?: string;
             keyName?: string;
+        };
+        McpServiceView: {
+            /** Format: uuid */
+            serviceId?: string;
+            name?: string;
+            description?: string;
+            status?: string;
+            mcpUrl?: string;
+            sseUrl?: string;
+            tools?: components["schemas"]["McpToolView"][];
+        };
+        McpToolView: {
+            /** Format: uuid */
+            toolId?: string;
+            toolName?: string;
+            description?: string;
+        };
+        ServicesView: {
+            credential?: components["schemas"]["McpCredentialView"];
+            authHint?: string;
+            hint?: string;
+            services?: components["schemas"]["McpServiceView"][];
         };
         GrantOption: {
             /** Format: uuid */
@@ -5732,6 +5836,86 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ModelApprovalView"];
+                };
+            };
+        };
+    };
+    credential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["McpCredentialView"];
+                };
+            };
+        };
+    };
+    issue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["IssuedCredential"];
+                };
+            };
+        };
+    };
+    rotate_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["IssuedCredential"];
+                };
+            };
+        };
+    };
+    revoke_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["McpCredentialView"];
                 };
             };
         };
@@ -7696,7 +7880,7 @@ export interface operations {
             };
         };
     };
-    rotate_1: {
+    rotate_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -7766,7 +7950,7 @@ export interface operations {
             };
         };
     };
-    issue: {
+    issue_1: {
         parameters: {
             query?: {
                 expiresAt?: string;
@@ -7794,7 +7978,7 @@ export interface operations {
             };
         };
     };
-    revoke_1: {
+    revoke_2: {
         parameters: {
             query?: never;
             header?: never;
@@ -9010,6 +9194,26 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["MePlazaView"];
+                };
+            };
+        };
+    };
+    services: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ServicesView"];
                 };
             };
         };
