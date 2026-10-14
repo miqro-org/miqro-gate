@@ -9,7 +9,10 @@ import java.util.Set;
  * pattern): {@code null} capabilities mean full access; a non-null list narrows
  * the consumer to the listed channels. Two channels exist today:
  * {@code billing:read} (control-plane /api/v1/billing/**) and {@code mcp:call}
- * (MCP data plane). Enforcement is fail-closed at each channel.
+ * (MCP data plane). An unset scope is full access by design (not fail-closed)
+ * and is the state every consumer starts in — creation takes no capabilities —
+ * so least privilege must be set explicitly; a non-null list denies every
+ * channel it does not name.
  */
 public final class ConsumerCapabilities {
 

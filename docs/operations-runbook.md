@@ -58,8 +58,10 @@
 
 平台等外部系统的 `mqk_api_…` 凭据（管理 API `/api/v1/admin/api-consumers`，#316/#322）：
 
-1. **最小权限**：发行后按用途配 scope（`PATCH …/{id}/scope`，`billing:read`/`mcp:call`；不配=全量）。
-   只调 MCP 的 Agent 务必去掉 `billing:read`——越权调用计费面返回 `403 CONSUMER_SCOPE_DENIED`。
+1. **最小权限**：**创建接口不接受 scope——新建的消费者一律是「全量」（所有通道，含计费查询）**，
+   所以发行后必须显式收窄：`PATCH …/{id}/scope`（`billing:read`/`mcp:call`；`null` = 全量、`[]` = 无通道）。
+   只调 MCP 的 Agent 务必只留 `mcp:call`——越权调用计费面返回 `403 CONSUMER_SCOPE_DENIED`。
+   **别把「没配」当成「已收紧」**（这是实测踩过的口径坑，见 #25）。
 2. **到期**：创建时给 `expiresAt`（90 天等）成为常态；**到期即静默失效**（计费与网关 MCP 双面 401，
    与未知 Key 同形）——列表仍可见到期行。到期前完成轮换，勿依赖当天操作。
 3. **轮换 = 重建**：发新消费者（新名）→ 迁移调用方 → 在旧消费者上 disable。**scope/到期不继承**，

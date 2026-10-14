@@ -66,7 +66,14 @@ public record ApiConsumer(UUID id, UUID tenantId, String name, byte[] keyDigest,
         return jwtPublicKeyPem != null;
     }
 
-    /** Channel check (fail-closed): null scope means full access. */
+    /**
+     * Channel check: an unset scope ({@code null}) means <b>full access</b> —
+     * deliberately not fail-closed, and the state every freshly created consumer is
+     * in (the create API takes no capabilities). Least privilege therefore has to
+     * be declared explicitly ({@code PATCH
+     * /api/v1/admin/api-consumers/{id}/scope}); a non-null list allows only its
+     * entries.
+     */
     public boolean allows(String capability) {
         return capabilities == null || capabilities.contains(capability);
     }

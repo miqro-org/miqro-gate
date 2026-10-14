@@ -21,7 +21,7 @@ import java.util.UUID;
 public class McpOnboardingService {
 
     /** Same credential story as the data plane (ADR-0013): consumer keys only. */
-    static final String AUTH_HINT = "认证：Authorization: Bearer <消费者 API Key 或 JWT>（需 mcp:call 作用域）";
+    static final String AUTH_HINT = "认证：Authorization: Bearer <消费者 API Key 或 JWT>（需 mcp:call 作用域；未设作用域 = 全权限，请显式声明）";
 
     private final AdminMcpService adminMcpService;
     private final McpHealthChecker healthChecker;

@@ -341,7 +341,7 @@ export const DICT: Record<string, string> = {
   '全部角色': 'All roles',
   '全部请求（兜底）': 'All requests (fallback)',
   '全量': 'Full',
-  '全量（不裁剪，默认）': 'Full (no trimming, default)',
+  '全量（不裁剪；等同未设作用域）': 'Full (no trimming; same as an unset scope)',
   '公历': 'Calendar week',
   '公司内部技能目录，全部技能对登录用户可见。下载权限按团队/项目授权。':
     'Internal skill catalog — all skills are visible to signed-in users. Download rights follow team/project authorization.',
@@ -1677,8 +1677,8 @@ export const DICT: Record<string, string> = {
     'Create a machine identity for an external system / platform; human users are managed under Users.',
   'API Key 仅创建时展示一次；或配置 JWT——平台自持私钥签发，网关只存公钥验签，可随时轮换。':
     'The API Key is shown only once at creation; or configure JWT — the platform signs with its own private key, the gateway only stores the public key and can rotate it anytime.',
-  '计费查询（billing:read）与 MCP 调用（mcp:call）按需放开，默认拒绝。':
-    'Grant billing lookup (billing:read) and MCP calls (mcp:call) on demand — denied by default.',
+  '计费查询（billing:read）与 MCP 调用（mcp:call）按需勾选；不设作用域等于全部通道（新建消费者的初始状态），最小权限必须显式收窄。':
+    'Grant billing lookup (billing:read) and MCP calls (mcp:call) on demand; an unset scope means every channel (the state right after creation), so least privilege must be narrowed explicitly.',
   '「调用概览」查看近 24 小时 / 7 天转发与被拒情况；启用「消费者密钥·即将到期」告警后，到期前 7 天提醒。':
     'Check forwards and rejections over the last 24h / 7d under Call overview; with the “consumer key expiring” alert enabled you get a reminder 7 days before expiry.',
   '等待管理员在「用户 → 项目成员」把你加入项目；项目是授权与用量的治理单元。':

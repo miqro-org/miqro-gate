@@ -365,6 +365,10 @@ onMounted(load);
             hint="到期后该消费者的请求将静默返回 401。"
             data-testid="consumer-create-expires"
           />
+          <p class="next-consumers__create-note" data-testid="consumer-create-scope-note">
+            新建的消费者<strong>未设作用域 = 全部通道</strong>（计费查询与 MCP
+            都放行）；创建后请用行内「作用域」收窄到最小权限。
+          </p>
           <p v-if="formError" class="ui-form-error">{{ formError }}</p>
           <div class="next-consumers__actions">
             <UiButton
@@ -713,7 +717,7 @@ onMounted(load);
     >
       <div class="next-consumers__scope-mode">
         <UiRadio v-model="scopeMode" value="full" data-testid="scope-mode-full">
-          全量（不裁剪，默认）
+          全量（不裁剪；等同未设作用域）
         </UiRadio>
         <UiRadio v-model="scopeMode" value="custom" data-testid="scope-mode-custom">
           自定义通道
@@ -774,6 +778,12 @@ onMounted(load);
 .next-consumers__actions {
   display: flex;
   gap: var(--ui-space-2);
+}
+
+.next-consumers__create-note {
+  font-size: var(--ui-font-size-xs);
+  color: var(--ui-foreground-secondary);
+  margin: 0;
 }
 
 .next-consumers__name {
