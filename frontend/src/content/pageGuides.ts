@@ -90,7 +90,7 @@ export const CONSUMERS_GUIDE: PageGuideContent = {
     },
     {
       title: '划定能力作用域',
-      desc: '计费查询（billing:read）与 MCP 调用（mcp:call）按需放开，默认拒绝。',
+      desc: '计费查询（billing:read）与 MCP 调用（mcp:call）按需勾选；不设作用域等于全部通道（新建消费者的初始状态），最小权限必须显式收窄。',
     },
     {
       title: '监控与到期',
