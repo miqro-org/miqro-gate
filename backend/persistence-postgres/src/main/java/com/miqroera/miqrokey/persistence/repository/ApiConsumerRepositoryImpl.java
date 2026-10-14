@@ -23,7 +23,8 @@ public class ApiConsumerRepositoryImpl implements ApiConsumerRepository {
             rs.getString("jwt_key_fingerprint"),
             rs.getTimestamp("jwt_key_set_at") != null ? rs.getTimestamp("jwt_key_set_at").toInstant() : null,
             rs.getLong("version"), rs.getTimestamp("created_at").toInstant(), rs.getTimestamp("updated_at").toInstant(),
-            capabilities(rs), rs.getTimestamp("expires_at") != null ? rs.getTimestamp("expires_at").toInstant() : null);
+            capabilities(rs), (UUID) rs.getObject("owner_user_id"),
+            rs.getTimestamp("expires_at") != null ? rs.getTimestamp("expires_at").toInstant() : null);
 
     /**
      * Reads the nullable jsonb scope column as a capability list (null = full).
@@ -67,16 +68,18 @@ public class ApiConsumerRepositoryImpl implements ApiConsumerRepository {
         jdbc.update("""
                 INSERT INTO api_consumers
                     (id, tenant_id, name, key_digest, key_prefix, status, jwt_public_key_pem,
-                     jwt_key_fingerprint, jwt_key_set_at, version, created_at, updated_at, capabilities, expires_at)
+                     jwt_key_fingerprint, jwt_key_set_at, version, created_at, updated_at, capabilities, owner_user_id,
+                     expires_at)
                 VALUES (:id, :tenantId, :name, :keyDigest, :keyPrefix, :status, :jwtPem, :jwtFingerprint,
-                        :jwtSetAt, 0, now(), now(), :capabilities::jsonb, :expiresAt)
+                        :jwtSetAt, 0, now(), now(), :capabilities::jsonb, :ownerUserId, :expiresAt)
                 """, new MapSqlParameterSource("id", consumer.id()).addValue("tenantId", consumer.tenantId())
                 .addValue("name", consumer.name()).addValue("keyDigest", consumer.keyDigest())
                 .addValue("keyPrefix", consumer.keyPrefix()).addValue("status", consumer.status())
                 .addValue("jwtPem", consumer.jwtPublicKeyPem()).addValue("jwtFingerprint", consumer.jwtKeyFingerprint())
                 .addValue("jwtSetAt",
                         consumer.jwtKeySetAt() != null ? java.sql.Timestamp.from(consumer.jwtKeySetAt()) : null)
-                .addValue("capabilities", scopeJson(consumer.capabilities())).addValue("expiresAt",
+                .addValue("capabilities", scopeJson(consumer.capabilities()))
+                .addValue("ownerUserId", consumer.ownerUserId()).addValue("expiresAt",
                         consumer.expiresAt() != null ? java.sql.Timestamp.from(consumer.expiresAt()) : null));
         return consumer;
     }
@@ -142,7 +145,30 @@ public class ApiConsumerRepositoryImpl implements ApiConsumerRepository {
         return new ApiConsumer(consumer.id(), consumer.tenantId(), consumer.name(), consumer.keyDigest(),
                 consumer.keyPrefix(), consumer.status(), consumer.jwtPublicKeyPem(), consumer.jwtKeyFingerprint(),
                 consumer.jwtKeySetAt(), consumer.version() + 1, consumer.createdAt(), java.time.Instant.now(),
-                consumer.capabilities(), consumer.expiresAt());
+                consumer.capabilities(), consumer.ownerUserId(), consumer.expiresAt());
+    }
+
+    @Override
+    public Optional<ApiConsumer> findByOwnerUserId(UUID tenantId, UUID ownerUserId) {
+        return jdbc.query("SELECT * FROM api_consumers WHERE tenant_id = :tenantId AND owner_user_id = :ownerUserId",
+                new MapSqlParameterSource("tenantId", tenantId).addValue("ownerUserId", ownerUserId), ROW_MAPPER)
+                .stream().findFirst();
+    }
+
+    @Override
+    @Transactional
+    public ApiConsumer rotateKey(UUID id, UUID tenantId, byte[] keyDigest, String keyPrefix) {
+        int updated = jdbc.update("""
+                UPDATE api_consumers
+                SET key_digest = :keyDigest, key_prefix = :keyPrefix, status = 'ACTIVE',
+                    version = version + 1, updated_at = now()
+                WHERE id = :id AND tenant_id = :tenantId
+                """, new MapSqlParameterSource("id", id).addValue("tenantId", tenantId).addValue("keyDigest", keyDigest)
+                .addValue("keyPrefix", keyPrefix));
+        if (updated == 0) {
+            throw new IllegalStateException("api consumer not found for rotation: " + id);
+        }
+        return findByIdAndTenantId(id, tenantId).orElseThrow();
     }
 
     @Override

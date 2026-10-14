@@ -66,7 +66,7 @@ export ANTHROPIC_AUTH_TOKEN="mqk_live_…"
 步骤：
 
 1. **管理端拿接入信息**：「MCP 服务」页 → 目标服务行「接入信息」→ 复制 `streamableHttpUrl` 或 `sseUrl`（网关地址 + `/mcpservers/{service}/…` 形态）。
-2. **建消费者凭据**：「API 消费者」页新建消费者（API Key 仅创建时展示一次，或 JWT），能力作用域**显式加** **`mcp:call`**。⚠️ 不要依赖「不勾选就拒绝」：当前实现对**未设置作用域**的消费者按全放行处理（`ApiConsumer.allows()` 对 `null` 返回真），最小权限必须显式声明——详见 [`operations-runbook.md` §3f](operations-runbook.md)。该页是**管理员功能**：在面向用户的自助面（#1）落地前，普通用户拿不到自己的消费者凭据，需由管理员创建后交付（**上游 MCP 的地址与后端 Key 全程不下发**，用户只用网关签发的凭据）。
+2. **建消费者凭据**：**用户可自助签发**——`POST /api/v1/me/mcp-credential`（一个用户一把，命名 `<用户名>@portal`，固定只开 `mcp:call`；轮换 `…/rotate` 原地换 Key 且保留授权、撤销 `…/revoke` 幂等，详见 api-contract §4.7b）。管理员仍可在「API 消费者」页代为创建（外部系统那类走这条），能力作用域**显式加** **`mcp:call`**：⚠️ 不要依赖「不勾选就拒绝」——当前实现对**未设置作用域**的消费者按全放行处理（`ApiConsumer.allows()` 对 `null` 返回真），最小权限必须显式声明；详见 [`operations-runbook.md` §3f](operations-runbook.md)。**上游 MCP 的地址与后端 Key 全程不下发**，用户只用网关签发的凭据。
 3. **在封闭工具里改 MCP 配置**：把 MCP 服务器地址换为第 1 步的地址、凭据换为第 2 步的消费者 Key。⚠️ 若网关用的是**自签证书**（内网/本地部署常见），**客户端也要信任该 CA**，否则连接会停在证书校验失败——Node 内核的客户端（Claude Code / Claude Desktop）可在启动前设 `NODE_EXTRA_CA_CERTS=<网关证书或 CA>.pem`；换成受信证书后这一步不再需要。
 4. **验证**：MCP 服务页「立即验证」确认连通；真实调用后在「MCP 访问日志」按服务/消费者查看调用记录（含工具名、TTFB、结论）。
 

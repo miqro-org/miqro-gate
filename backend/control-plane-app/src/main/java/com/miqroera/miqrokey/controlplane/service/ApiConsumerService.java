@@ -43,9 +43,20 @@ public class ApiConsumerService {
         return repository.findAllByTenantId(tenantId).stream().map(this::toView).toList();
     }
 
-    @Transactional
     public CreatedConsumer create(UUID tenantId, UUID adminId, String name, Instant expiresAt,
             List<String> capabilities, String requestId) {
+        return create(tenantId, adminId, name, expiresAt, capabilities, null, requestId);
+    }
+
+    /**
+     * @param ownerUserId
+     *            ADR-0028 option A: the portal user this consumer belongs to
+     *            ({@code null} for administrator-created external-system consumers,
+     *            which is what the admin path above always passes).
+     */
+    @Transactional
+    public CreatedConsumer create(UUID tenantId, UUID adminId, String name, Instant expiresAt,
+            List<String> capabilities, UUID ownerUserId, String requestId) {
         if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "CONSUMER_EXPIRES_INVALID", "到期时间必须是将来的时刻。");
         }
@@ -57,7 +68,7 @@ public class ApiConsumerService {
         }
         ApiConsumer.GeneratedKey key = ApiConsumer.generateKey();
         ApiConsumer consumer = new ApiConsumer(UUID.randomUUID(), tenantId, name.trim(), key.digest(), key.prefix(),
-                "ACTIVE", null, null, null, 0, Instant.now(), Instant.now(), capabilities, expiresAt);
+                "ACTIVE", null, null, null, 0, Instant.now(), Instant.now(), capabilities, ownerUserId, expiresAt);
         try {
             repository.insert(consumer);
         } catch (DuplicateKeyException e) {
@@ -65,9 +76,10 @@ public class ApiConsumerService {
         }
         routeRefreshPublisher.publishChanged();
         String auditedName = AuditSummaries.escapeJson(AuditSummaries.sanitize(consumer.name()));
+        String ownerField = ownerUserId == null ? "" : ",\"ownerUserId\":\"" + ownerUserId + "\"";
         auditService.record(tenantId, adminId, "CONSUMER_CREATE", "CONSUMER", consumer.id(),
                 "{\"name\":\"" + auditedName + "\",\"expiresAt\":\"" + (expiresAt != null ? expiresAt : "never")
-                        + "\",\"capabilities\":" + scopeJson(capabilities) + "}",
+                        + "\",\"capabilities\":" + scopeJson(capabilities) + ownerField + "}",
                 requestId);
         return new CreatedConsumer(toView(consumer), key.plaintext());
     }
@@ -138,7 +150,7 @@ public class ApiConsumerService {
             Instant jwtKeySetAt) {
         return new ApiConsumer(consumer.id(), consumer.tenantId(), consumer.name(), consumer.keyDigest(),
                 consumer.keyPrefix(), status, pem, fingerprint, jwtKeySetAt, consumer.version(), consumer.createdAt(),
-                consumer.updatedAt(), consumer.capabilities(), consumer.expiresAt());
+                consumer.updatedAt(), consumer.capabilities(), consumer.ownerUserId(), consumer.expiresAt());
     }
 
     private ApiConsumerView toView(ApiConsumer consumer) {
