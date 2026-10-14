@@ -357,6 +357,23 @@
 - 口径与审计同 `5.19`（水位读时计算、NORMAL/WARNING/EXCEEDED）；本端点不触发审计（只读）。
 - 会话鉴权（任意角色，含普通用户）；匿名 `401`。无规则时返回空数组。
 
+### 4.7b 我的 MCP 接入（自助，ADR-0028）
+
+普通用户（含管理员）自助使用 MCP 数据面：**每人一个「门户消费者」**（命名 `<用户名>@portal`，由 `owner_user_id` 绑定），凭据复用 ADR-0010 的 `mqk_api_…`，**只开 `mcp:call` 一个通道**。
+
+| 方法与路径 | 用途 |
+|---|---|
+| `GET /api/v1/me/mcp-services` | 发现：`{credential, authHint, hint, services[]}`。`credential.issued=false` = 还没签发；`services[]` 只含**该用户消费者当前被允许**的服务与工具——判定与数据面同源（服务级 `NONE/ALLOW/DENY` + 工具级覆盖，见 §5.16），**无权服务不出现、被禁用的工具不出现**。每项含 `mcpUrl`（`/mcpservers/{name}/mcp`）、`sseUrl` 与 `tools[]`；`hint` 仅在列表为空时给出下一步提示 |
+| `GET /api/v1/me/mcp-credential` | 凭据元数据（`issued` / `name` / `keyPrefix` / `status` / `capabilities` / 创建与到期时间）；**永不含密钥** |
+| `POST /api/v1/me/mcp-credential` | **首次签发** → `201` `{credential, apiKey, shownOnce:true}`（明文仅此一次）；已有凭据 → `409 MCP_CREDENTIAL_ALREADY_ISSUED` |
+| `POST /api/v1/me/mcp-credential/rotate` | **原地轮换**：同一消费者行（**ACL 授权保留**）、新密钥、状态回 `ACTIVE`（被撤销的凭据因此可复活）；未签发 → `404 MCP_CREDENTIAL_NOT_ISSUED` |
+| `POST /api/v1/me/mcp-credential/revoke` | **撤销**：消费者置 `DISABLED`（幂等） |
+
+- **审计**：签发记 `CONSUMER_CREATE`（actor = 用户本人，detail 带 `ownerUserId`）、轮换记 `CONSUMER_KEY_ROTATE`、撤销记 `CONSUMER_DISABLE`。
+- **授权口径**：用户能调到什么，由管理员在「MCP 服务 → 访问控制」里**对该门户消费者**授权决定；所以签发之后还要管理员授权，服务才会出现在 `services[]`（`hint` 会写明下一步）。管理员页面上看到的就是名为 `<用户名>@portal` 的消费者。
+- **边界**：这几只接受**会话**（`/me/*` 平面），消费者 Key 访问不到；一个用户至多一条门户消费者（部分唯一索引，ADR §4 约束）；删除用户时其门户消费者与授权按外键级联清理。
+- 凭据与推理面 Virtual Key（`mqk_live_…`）**刻意不合并**：用途不同（推理面按项目/产品/凭证绑定），界面与文档都要讲清区别。
+
 ### 4.8 错误码
 
 | code | HTTP | 场景 |

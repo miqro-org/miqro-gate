@@ -35,14 +35,22 @@ import java.util.UUID;
  */
 public record ApiConsumer(UUID id, UUID tenantId, String name, byte[] keyDigest, String keyPrefix, String status,
         String jwtPublicKeyPem, String jwtKeyFingerprint, Instant jwtKeySetAt, long version, Instant createdAt,
-        Instant updatedAt, List<String> capabilities, Instant expiresAt) {
+        Instant updatedAt, List<String> capabilities, UUID ownerUserId, Instant expiresAt) {
 
     /** Backwards-compatible constructor: no capability scope, never expires. */
     public ApiConsumer(UUID id, UUID tenantId, String name, byte[] keyDigest, String keyPrefix, String status,
             String jwtPublicKeyPem, String jwtKeyFingerprint, Instant jwtKeySetAt, long version, Instant createdAt,
             Instant updatedAt) {
         this(id, tenantId, name, keyDigest, keyPrefix, status, jwtPublicKeyPem, jwtKeyFingerprint, jwtKeySetAt, version,
-                createdAt, updatedAt, null, null);
+                createdAt, updatedAt, null, null, null);
+    }
+
+    /** Convenience constructor: no portal owner (external-system consumer). */
+    public ApiConsumer(UUID id, UUID tenantId, String name, byte[] keyDigest, String keyPrefix, String status,
+            String jwtPublicKeyPem, String jwtKeyFingerprint, Instant jwtKeySetAt, long version, Instant createdAt,
+            Instant updatedAt, List<String> capabilities, Instant expiresAt) {
+        this(id, tenantId, name, keyDigest, keyPrefix, status, jwtPublicKeyPem, jwtKeyFingerprint, jwtKeySetAt, version,
+                createdAt, updatedAt, capabilities, null, expiresAt);
     }
 
     public ApiConsumer {

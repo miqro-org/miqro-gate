@@ -30,6 +30,19 @@ public interface ApiConsumerRepository {
     ApiConsumer updateCapabilities(UUID id, UUID tenantId, List<String> capabilities);
 
     /**
+     * The portal consumer owned by a user (ADR-0028 option A): at most one per
+     * tenant + user, identified by the non-null {@code owner_user_id}.
+     */
+    Optional<ApiConsumer> findByOwnerUserId(UUID tenantId, UUID ownerUserId);
+
+    /**
+     * Replaces the key material in place (self-service rotation): new digest and
+     * prefix, status back to ACTIVE, version bumped. The consumer row — and with it
+     * the ACL grants — stays the same.
+     */
+    ApiConsumer rotateKey(UUID id, UUID tenantId, byte[] keyDigest, String keyPrefix);
+
+    /**
      * ACTIVE consumers expiring inside the window (issue #322 notifier); rows
      * without an expiry are never returned.
      */
