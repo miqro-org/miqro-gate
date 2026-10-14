@@ -32,6 +32,7 @@
 - [ADR-0024：请求侧可选改造②——错误驱动的整流重试（Accepted（部分）：选项 B 观察档已作为一期交付（#770 / PR #1018）；C/D/E 仍为提案，见文件 §7）](0024-request-side-rectification-retry.md)
 - [ADR-0025：Agent 生命周期补齐——删除 / 重新启用 / 改名（Accepted：选项 D，实现见 #1012）](0025-agent-lifecycle.md)
 - [ADR-0027：内容过滤 Phase 2——本地规则 + shadow + 异步 + 不阻断（Accepted，2026-09-20；#740 保持 OPEN 跟踪实现）](0027-content-filtering-phase2.md)
+- [ADR-0028：门户用户自助 MCP 凭据形态——选定「每用户一个消费者」（Accepted，2026-10-14；实施见 #30，自助接入面需求见 #1）](0028-user-mcp-credential-form.md)
 
 ## 已被取代
 
@@ -42,6 +43,5 @@
 - [ADR-0021：同产品凭证回退——多凭证切换与「每笔唯一归属」的兼容设计（Proposed，待所有者拍板）](0021-same-product-credential-failover.md)
 - [ADR-0023：请求侧可选改造①——prompt 缓存断点自动注入（Proposed，待所有者拍板；opt-in 按 Key，见 issue #769）](0023-request-side-cache-breakpoint-injection.md)
 - [ADR-0026：速率限流（TPM/RPM）评估与决策留档（Proposed，待所有者拍板；选项 D「只告警」已作为观测一期交付：issue #706 / PR #1016，A/B/C 未动）](0026-rate-limiting-evaluation.md)
-- [ADR-0028：门户用户自助 MCP 凭据形态——每用户一个消费者（推荐）vs 用户维度 JWT（Proposed，待所有者拍板；自助接入面 issue #1）](0028-user-mcp-credential-form.md)
 
 - （非独立提案）ADR-0024 的二期选项 C/D/E：正文已「部分 Accepted」，二期未拍板——按文件 §3 的触发条件、等一期观察数据支持。
