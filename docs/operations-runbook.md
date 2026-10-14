@@ -90,6 +90,72 @@
 3. **语义**：健康状态是**运营信号**，当前不驱动任何流量行为（数据面接线 F29 待形态确认）——
    `UNHEALTHY` 时人工核实服务与网络，处理后在页面「健康检查」对话框调整阈值或路径。
 
+## 3f. 登记自建/自托管 MCP 服务（streamable-http + 自签 TLS / 内网地址）
+
+**先明确交付边界：MCP 注册表是运行时数据，不在代码里。** 服务、工具、授权、消费者、调用日志
+都只存在该部署自己的 PostgreSQL——新起的栈（或别人 clone 本仓库后新建的栈）里 `mcp_services`
+是空的，必须自己登记。要交付「已配好的一整套」，交付物是**数据库备份 + `deploy/secrets/`**，
+不是 git 仓库；恢复后只需按环境改服务表的 `endpoint`（例如容器回源宿主时用的
+`host.docker.internal` 要换成实际地址）。
+
+### 前置：上游必须满足三条（网关侧硬要求，均无放松开关）
+
+| 要求 | 依据 | 不满足时的表现 |
+|---|---|---|
+| **https** | `AdminMcpService.validateEndpoint` 硬判定 | 非 https → `400 MCP_ENDPOINT_INVALID`；自签可以，但网关侧要信任该 CA |
+| **streamable-http** | 数据面只 `POST /mcpservers/{name}/mcp`，不映射 GET/DELETE | 上游只开 SSE 时 `/mcp` 直接 404 |
+| **上游无状态** | 工具同步裸发 `tools/list`（不握手、不带会话头） | 有状态上游回 `400 Missing session ID`；而探活发的是 `initialize`、**照样 200** → 「探活绿、工具列表空」 |
+
+### 登记步骤（按序执行，每步都有可验收输出）
+
+1. **登记服务** `POST /api/v1/admin/mcp-services`：`endpoint` 用 https 且不带 query/fragment/userinfo；
+   `transport` 默认 `STREAMABLE_HTTP`；健康检查默认 `checkPath=/health`。
+2. **把探活模式改成 `JSONRPC_INITIALIZE`** `POST .../{id}/health-config`：默认的 `HEALTH_PATH` 是
+   `GET endpoint + checkPath`，对「端点自带路径」的上游会拼成 `…/mcp/health`（不存在）→ 上游 401。
+   JSON-RPC 模式改发 `initialize` 到 endpoint 本身，并带上 §3d 配好的上游 Bearer。
+3. **配上游凭据** `PUT .../{id}/backend-auth` `{"mode":"API_KEY","secret":"…"}`：创建时默认 `VISITOR`
+   （网关**不带**上游鉴权），上游要求 Bearer 时必然 401。轮换与排障见 §3d。
+4. **探活** `POST .../{id}/verify` → `reachable:true`，detail 应出现「JSON-RPC initialize 通过」。
+5. **同步工具** `POST .../{id}/tools/sync` → `upstreamToolCount` 与上游一致；新增工具默认 `ENABLED`；
+   上游摘掉的工具会出现在 `absentUpstream`（注册表保留行，需要时手动置 `DISABLED`）。
+6. **访问控制**：服务级 `PUT .../{id}/access/mode` 先设 **`NONE`**（「服务开放」），再逐工具
+   `PUT .../{id}/access/grants` `{"toolId":…,"mode":"ALLOW","consumerIds":[…]}`。顺序反了会
+   `409 TOOL_ACL_UNSUPPORTED`——**工具级覆盖只在服务级 `NONE` 下可用**。
+7. **建消费者** `POST /api/v1/admin/api-consumers` → 返回一次性 `apiKey`（`mqk_api_…`）。
+   ⚠️ 作用域要**显式设置**：当前实现对「未设作用域」的消费者是**全放行**
+   （`ApiConsumer.allows()` 对 `null` 返回 true），别依赖「不勾选就拒绝」；MCP 数据面需要
+   `mcp:call`（`PATCH /api/v1/admin/api-consumers/{id}/scope`）。
+8. **客户端接入**：「MCP 服务」页取 `streamableHttpUrl`（`https://<网关>/mcpservers/<服务>/mcp`），
+   凭据用第 7 步的 Key；也可用 `scripts/onboarding/miqro-onboard.sh print mcp --mcp-url …` 打印配置。
+   客户端侧完整姿势见 [`client-onboarding.md` §4](client-onboarding.md)。
+
+### 自签证书与内网地址：两处基础设施改动（最容易漏）
+
+- **两个 JVM 都要信任该 CA**：探活（`McpHealthChecker`）与工具同步（`McpToolsListClient`）跑在
+  **control-plane**，只有数据面转发跑在 **gateway**——只给网关加信任时，探活会稳定报
+  `PKIX path building failed`。做法：把 CA 加进两个镜像的 JRE `cacerts`（自建镜像层里
+  `keytool -importcert -cacerts -storepass changeit -noprompt -alias <别名> -file <ca.pem>`）。
+  ⚠️ **不要**用 `JAVA_TOOL_OPTIONS` 追加 `-Djavax.net.ssl.trustStore*`：实测该 JVM 会以
+  `Invalid decorator 'filecount=2'` 拒绝启动（同一个 `-Xlog` 串单独使用却正常）。
+- **放行内网网段**：容器访问宿主或内网 MCP 时，SSRF 门禁默认拦私网地址，而基础编排没有透传
+  `MIQROKEY_UPSTREAM_ALLOWED_CIDRS`——需要在自己的 compose 覆盖文件里显式设置
+  （例如 `127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`）。
+
+### 验收与排错
+
+验收链：`verify` 通过 → `tools/sync` 数量与上游一致 → 经网关 `tools/list` 能列出工具 →
+`tools/call` 返回真实工具结果 → 「MCP 访问日志」出现该次调用（含消费者归因）。
+
+| 现象 | 多半是哪一步没做对 |
+|---|---|
+| 服务一直 `UNKNOWN` / `UNHEALTHY` | 探活模式没设 `JSONRPC_INITIALIZE`；或 control-plane 不信任上游证书（`PKIX path building failed`） |
+| `HEALTHY` 但工具列表为空 | 上游有状态（`400 Missing session ID`）——上游需切无状态 streamable-http |
+| 调用 **401** | 没带消费者凭据；或 `backend-auth` 仍是 `VISITOR`（上游要求 Bearer） |
+| 调用 **403 `mcp_access_denied`** | 该消费者没有该工具的授权，或未显式设置 `mcp:call` 作用域 |
+| 调用 **403 `mcp_tool_unavailable`** | 工具在注册表里被禁用，或上游已摘掉该工具而没重新同步 |
+| 调用 **502 `backend_auth_unavailable`** | 网关未能解密上游密钥（见 §3d） |
+| 连接失败 / 超时 | endpoint 地址或端口不对；或 SSRF 白名单没放行该内网网段 |
+
 ## 4. 吊销 Virtual Key
 
 确认 Key 掩码、所属用户/项目/产品和最近使用，执行立即吊销。新请求立刻拒绝；是否取消既有流按安全事件等级决定并记录。怀疑泄漏时同时撤销相关会话、检查 IP/模型/用量异常，并建议用户轮换 CC Switch 配置。

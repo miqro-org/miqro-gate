@@ -66,9 +66,11 @@ export ANTHROPIC_AUTH_TOKEN="mqk_live_…"
 步骤：
 
 1. **管理端拿接入信息**：「MCP 服务」页 → 目标服务行「接入信息」→ 复制 `streamableHttpUrl` 或 `sseUrl`（网关地址 + `/mcpservers/{service}/…` 形态）。
-2. **建消费者凭据**：「API 消费者」页新建消费者（API Key 仅创建时展示一次，或 JWT），能力作用域勾选 **`mcp:call`**（默认拒绝，须显式勾选）。
+2. **建消费者凭据**：「API 消费者」页新建消费者（API Key 仅创建时展示一次，或 JWT），能力作用域**显式加** **`mcp:call`**。⚠️ 不要依赖「不勾选就拒绝」：当前实现对**未设置作用域**的消费者按全放行处理（`ApiConsumer.allows()` 对 `null` 返回真），最小权限必须显式声明——详见 [`operations-runbook.md` §3f](operations-runbook.md)。
 3. **在封闭工具里改 MCP 配置**：把 MCP 服务器地址换为第 1 步的地址、凭据换为第 2 步的消费者 Key。
 4. **验证**：MCP 服务页「立即验证」确认连通；真实调用后在「MCP 访问日志」按服务/消费者查看调用记录（含工具名、TTFB、结论）。
+
+> **服务侧前提**：第 1 步假定目标服务**已登记进注册表**。若上游是自建/自托管服务（自签证书、内网地址都算），登记步骤、网关侧三条硬要求与常见报错的归因见 [`operations-runbook.md` §3f](operations-runbook.md)。
 
 > **实测样章**：真实封闭客户端（WorkBuddy）按本姿势的完整接入记录、证据与踩坑（配置路径/信任门/工具放行）见 [`workbuddy-mcp-onboarding-sample.md`](workbuddy-mcp-onboarding-sample.md)。
 
