@@ -536,8 +536,13 @@ export function listApiConsumers(): Promise<ApiConsumerView[]> {
 export function createApiConsumer(
   name: string,
   expiresAt?: string,
+  capabilities?: string[] | null,
 ): Promise<CreateApiConsumerResponse> {
-  return post<CreateApiConsumerResponse>('/api/v1/admin/api-consumers', { name, expiresAt });
+  return post<CreateApiConsumerResponse>('/api/v1/admin/api-consumers', {
+    name,
+    expiresAt,
+    capabilities,
+  });
 }
 
 export function disableApiConsumer(id: string): Promise<ApiConsumerView> {

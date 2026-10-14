@@ -44,22 +44,30 @@ public class ApiConsumerService {
     }
 
     @Transactional
-    public CreatedConsumer create(UUID tenantId, UUID adminId, String name, Instant expiresAt, String requestId) {
+    public CreatedConsumer create(UUID tenantId, UUID adminId, String name, Instant expiresAt,
+            List<String> capabilities, String requestId) {
         if (expiresAt != null && !expiresAt.isAfter(Instant.now())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "CONSUMER_EXPIRES_INVALID", "到期时间必须是将来的时刻。");
         }
+        // #27: optional initial scope, same semantics as updateScope.
+        // Validated here so a bad code fails the create, not a later PATCH.
+        if (!ConsumerCapabilities.isValid(capabilities)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "CONSUMER_SCOPE_INVALID",
+                    "能力只能取 billing:read/mcp:call，且不得重复。");
+        }
         ApiConsumer.GeneratedKey key = ApiConsumer.generateKey();
         ApiConsumer consumer = new ApiConsumer(UUID.randomUUID(), tenantId, name.trim(), key.digest(), key.prefix(),
-                "ACTIVE", null, null, null, 0, Instant.now(), Instant.now(), null, expiresAt);
+                "ACTIVE", null, null, null, 0, Instant.now(), Instant.now(), capabilities, expiresAt);
         try {
             repository.insert(consumer);
         } catch (DuplicateKeyException e) {
             throw new ApiException(HttpStatus.CONFLICT, "CONSUMER_NAME_TAKEN", "消费者名称已存在。");
         }
         routeRefreshPublisher.publishChanged();
+        String auditedName = AuditSummaries.escapeJson(AuditSummaries.sanitize(consumer.name()));
         auditService.record(tenantId, adminId, "CONSUMER_CREATE", "CONSUMER", consumer.id(),
-                AuditSummaries.summary("name", AuditSummaries.sanitize(consumer.name()), "expiresAt",
-                        expiresAt != null ? expiresAt.toString() : "never"),
+                "{\"name\":\"" + auditedName + "\",\"expiresAt\":\"" + (expiresAt != null ? expiresAt : "never")
+                        + "\",\"capabilities\":" + scopeJson(capabilities) + "}",
                 requestId);
         return new CreatedConsumer(toView(consumer), key.plaintext());
     }

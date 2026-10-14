@@ -52,15 +52,45 @@ describe('NextAdminConsumersView', () => {
     await flushPromises();
     await wrapper.find('[data-testid="consumer-create-open"]').trigger('click');
     await wrapper.find('[data-testid="consumer-create-name"]').setValue('nightly');
+    // #27：作用域在创建时必选；这里选「自定义通道 + mcp:call」（只调 MCP 的典型用法）
+    await wrapper.find('[data-testid="consumer-create-scope-custom"]').setValue(true);
+    await wrapper.find('[data-testid="consumer-create-scope-mcp"]').setValue(true);
     await wrapper.find('[data-testid="consumer-create-submit"]').trigger('click');
     await flushPromises();
-    expect(mockApi.createApiConsumer).toHaveBeenCalledWith('nightly', undefined);
+    expect(mockApi.createApiConsumer).toHaveBeenCalledWith('nightly', undefined, ['mcp:call']);
     expect(document.body.textContent).toContain('mqk_ext_secretkey');
     const close = document.querySelector('[data-testid="consumer-key-close"]') as HTMLButtonElement;
     expect(close.disabled).toBe(true);
     (document.querySelector('[data-testid="consumer-key-ack"]') as HTMLInputElement).click();
     await flushPromises();
     expect(close.disabled).toBe(false);
+  });
+  it('#27 requires an explicit scope before a new consumer can be created', async () => {
+    mockApi.createApiConsumer.mockResolvedValue({
+      consumer: { ...consumer, id: 'k10', name: 'no-scope' },
+      apiKey: 'mqk_ext_secondkey',
+      shownOnce: true,
+    });
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.find('[data-testid="consumer-create-open"]').trigger('click');
+    await wrapper.find('[data-testid="consumer-create-name"]').setValue('no-scope');
+
+    // 未选作用域：按钮禁用，且即使事件仍被派发也不会发请求
+    const submit = wrapper.find('[data-testid="consumer-create-submit"]');
+    expect(submit.attributes('disabled')).toBeDefined();
+    await submit.trigger('click');
+    await flushPromises();
+    expect(mockApi.createApiConsumer).not.toHaveBeenCalled();
+
+    // 选「全量」即可提交，并显式传 null（= 全部通道，与 PATCH 的语义一致）
+    await wrapper.find('[data-testid="consumer-create-scope-full"]').setValue(true);
+    expect(
+      wrapper.find('[data-testid="consumer-create-submit"]').attributes('disabled'),
+    ).toBeUndefined();
+    await wrapper.find('[data-testid="consumer-create-submit"]').trigger('click');
+    await flushPromises();
+    expect(mockApi.createApiConsumer).toHaveBeenCalledWith('no-scope', undefined, null);
   });
   it('opens the call overview dialog with aggregates', async () => {
     mockApi.adminConsumerActivity.mockResolvedValue({

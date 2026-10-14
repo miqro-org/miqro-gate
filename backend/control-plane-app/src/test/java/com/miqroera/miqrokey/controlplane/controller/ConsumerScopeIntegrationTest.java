@@ -181,6 +181,43 @@ class ConsumerScopeIntegrationTest {
     }
 
     @Test
+    @DisplayName("#27: create takes an optional initial scope, applied from the very first request")
+    void createWithInitialScope() throws Exception {
+        // Field absent → pre-#27 behaviour byte for byte: null scope = every channel.
+        String fullKey = createConsumer();
+        mockMvc.perform(get("/api/v1/billing/summary").header("X-API-Key", fullKey)).andExpect(status().isOk());
+
+        // A scope given at creation applies from the first request.
+        MvcResult created = mockMvc
+                .perform(post("/api/v1/admin/api-consumers").cookie(sessionCookie, csrfCookie)
+                        .header("X-CSRF-Token", csrfToken).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"mcp-only\",\"capabilities\":[\"mcp:call\"]}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.consumer.capabilities[0]").value("mcp:call"))
+                .andReturn();
+        String mcpOnlyKey = objectMapper.readValue(created.getResponse().getContentAsString(), Map.class).get("apiKey")
+                .toString();
+        mockMvc.perform(get("/api/v1/billing/summary").header("X-API-Key", mcpOnlyKey))
+                .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("CONSUMER_SCOPE_DENIED"));
+
+        // Same validation as PATCH: unknown codes and duplicates are rejected up front.
+        mockMvc.perform(post("/api/v1/admin/api-consumers").cookie(sessionCookie, csrfCookie)
+                .header("X-CSRF-Token", csrfToken).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"bad-scope\",\"capabilities\":[\"sudo:all\"]}")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("CONSUMER_SCOPE_INVALID"));
+        mockMvc.perform(post("/api/v1/admin/api-consumers").cookie(sessionCookie, csrfCookie)
+                .header("X-CSRF-Token", csrfToken).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"dup-scope\",\"capabilities\":[\"mcp:call\",\"mcp:call\"]}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("CONSUMER_SCOPE_INVALID"));
+
+        // CONSUMER_CREATE carries the initial scope.
+        JsonNode summary = objectMapper.readTree(jdbc.queryForObject("""
+                SELECT change_summary::text FROM admin_audit_events
+                WHERE action = 'CONSUMER_CREATE' ORDER BY chain_position DESC LIMIT 1
+                """, new MapSqlParameterSource(), String.class));
+        assertThat(summary.get("capabilities").get(0).asText()).isEqualTo("mcp:call");
+    }
+
+    @Test
     @DisplayName("#1230: a quoted consumer name round-trips through the scope-update audit summary")
     void quotedConsumerNameSurvivesScopeUpdateAudit() throws Exception {
         String name = "scope \"quoted\" consumer";

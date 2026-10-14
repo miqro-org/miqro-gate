@@ -55,7 +55,7 @@ public class AdminApiConsumerController {
             HttpServletRequest httpReq) {
         var user = userContext.getUser();
         ApiConsumerService.CreatedConsumer created = consumerService.create(user.tenantId(), user.id(),
-                body.name().trim(), parseExpiresAt(body.expiresAt()), requestId(httpReq));
+                body.name().trim(), parseExpiresAt(body.expiresAt()), body.capabilities(), requestId(httpReq));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new CreateApiConsumerResponse(created.consumer(), created.apiKey(), true));
     }
@@ -124,7 +124,13 @@ public class AdminApiConsumerController {
                 requestId(httpReq));
     }
 
-    public record ApiConsumerCreateRequest(@NotBlank @Size(max = 200) String name, String expiresAt) {
+    /**
+     * #27: {@code capabilities} is optional — absent/null keeps the pre-#27
+     * behaviour (full access), a list narrows the consumer to those channels from
+     * the moment it exists.
+     */
+    public record ApiConsumerCreateRequest(@NotBlank @Size(max = 200) String name, String expiresAt,
+            List<String> capabilities) {
     }
 
     public record ApiConsumerScopeRequest(List<String> capabilities) {
