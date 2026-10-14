@@ -341,6 +341,12 @@ export const DICT: Record<string, string> = {
   '全部角色': 'All roles',
   '全部请求（兜底）': 'All requests (fallback)',
   '全量': 'Full',
+  '能力作用域（必选）': 'Capability scope (required)',
+  '全量（不裁剪）': 'Full (no trimming)',
+  '「全量」= 计费查询与 MCP 都放行；只调 MCP 的 Agent 请选「自定义通道」并只勾 mcp:call。':
+    '"Full" allows both billing lookup and MCP; an MCP-only agent should pick "Custom channels" and tick only mcp:call.',
+  '请选择能力作用域；只调 MCP 时选「自定义通道」并勾 mcp:call。':
+    'Choose a capability scope; for MCP-only callers pick "Custom channels" and tick mcp:call.',
   '全量（不裁剪；等同未设作用域）': 'Full (no trimming; same as an unset scope)',
   '公历': 'Calendar week',
   '公司内部技能目录，全部技能对登录用户可见。下载权限按团队/项目授权。':

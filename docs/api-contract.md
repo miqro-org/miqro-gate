@@ -791,18 +791,18 @@ name 与 url host，**secret 永不入摘要**）、`BUDGET_PUT/DELETE`（projec
 静默失效（401，与未知 Key 同形——不留「曾有效」信息）；管理列表仍展示该行与到期时间供审计；更新期限=重建消费者。
 可选告警规则类型 `CONSUMER_KEY_EXPIRING`（默认关，规则级 opt-in）：≤7 天到期消费者每（消费者×天）至多一条事件。
 
-**能力作用域（#316，V37）**：消费者可裁剪到预设通道。**`capabilities` NULL = 全量，而这正是新建消费者的
-初始状态**（创建接口不接受 `capabilities`，见下表）——所以「没配」不等于「已收紧」，最小权限必须用
-`PATCH …/{id}/scope` 显式声明。非 NULL 时按通道校验、清单外一律拒绝（计费通道缺 `billing:read` →
+**能力作用域（#316，V37；**创建时可选** #27）**：消费者可裁剪到预设通道。`capabilities` **NULL = 全量**
+（省略字段即此），非 NULL 时按通道校验、清单外一律拒绝（计费通道缺 `billing:read` →
 `403 CONSUMER_SCOPE_DENIED`；网关 MCP 数据面缺 `mcp:call` → `403 consumer_scope_denied`（error 信封））；
-`[]` = 无通道。该判断与 ACL/白名单正交，通道变更即时生效（路由快照刷新）。
+`[]` = 无通道。该判断与 ACL/白名单正交，通道变更即时生效（路由快照刷新）。**最小权限应在创建时就声明**
+（`POST` 支持该字段，#27），不要依赖「建完再补一步」——省略等于全量。
 
 **API 消费者**（管理员管理）：
 
 | 方法与路径 | 用途 |
 |---|---|
 | `GET /api/v1/admin/api-consumers` | 消费者列表（掩码视图 + JWT 公钥指纹） |
-| `POST /api/v1/admin/api-consumers` | 创建：`{ "name", "expiresAt"? }`（ISO-8601 时刻，必须为将来；#322） → `201`，返回一次性 API Key（明文仅此一次）；非法到期 `400 CONSUMER_EXPIRES_INVALID`。**不接受 `capabilities`**：新建的消费者作用域为 NULL（= 全量），需再调 `PATCH …/{id}/scope` 收窄 |
+| `POST /api/v1/admin/api-consumers` | 创建：`{ "name", "expiresAt"?, "capabilities"? }`（#322 / #27；ISO-8601 时刻，必须为将来） → `201`，返回一次性 API Key（明文仅此一次）；非法到期 `400 CONSUMER_EXPIRES_INVALID`。`capabilities` **缺省或 `null` = 全量**、`[]` = 无通道；取值与校验同 `PATCH …/{id}/scope`（未知码或重复 → `400 CONSUMER_SCOPE_INVALID`），**创建即生效**，审计 `CONSUMER_CREATE` 带初始作用域 |
 | `POST /api/v1/admin/api-consumers/{id}/disable` | 立即吊销（禁用的 Key 即刻失效） |
 | `PUT /api/v1/admin/api-consumers/{id}/jwt-key` | 设置/轮换 JWT 验签公钥：`{ "publicKeyPem" }`（RSA PEM SubjectPublicKeyInfo）→ 返回带 `jwtKeyFingerprint` 的视图；非法 PEM → `400 JWT_KEY_INVALID` |
 | `DELETE /api/v1/admin/api-consumers/{id}/jwt-key` | 移除公钥（JWT 认证立即失效） |

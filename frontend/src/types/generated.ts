@@ -3916,26 +3916,26 @@ export interface components {
             null?: boolean;
             float?: boolean;
             number?: boolean;
-            container?: boolean;
-            floatingPointNumber?: boolean;
-            missingNode?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            valueNode?: boolean;
-            bigInteger?: boolean;
-            integralNumber?: boolean;
-            bigDecimal?: boolean;
-            binary?: boolean;
             /** @deprecated */
             textual?: boolean;
-            string?: boolean;
             boolean?: boolean;
-            long?: boolean;
-            object?: boolean;
+            binary?: boolean;
+            pojo?: boolean;
             short?: boolean;
             double?: boolean;
             int?: boolean;
-            pojo?: boolean;
+            string?: boolean;
+            long?: boolean;
+            object?: boolean;
+            container?: boolean;
+            missingNode?: boolean;
+            bigDecimal?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            integralNumber?: boolean;
+            valueNode?: boolean;
+            bigInteger?: boolean;
+            floatingPointNumber?: boolean;
             embeddedValue?: boolean;
         };
         ImportResult: {
@@ -4159,6 +4159,7 @@ export interface components {
         ApiConsumerCreateRequest: {
             name: string;
             expiresAt?: string;
+            capabilities?: string[];
         };
         CreateApiConsumerResponse: {
             consumer?: components["schemas"]["ApiConsumerView"];

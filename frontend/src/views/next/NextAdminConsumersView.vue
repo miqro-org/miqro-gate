@@ -33,6 +33,13 @@ const createExpiresAt = ref('');
 const submitting = ref(false);
 const formError = ref('');
 
+// #27: the initial scope is chosen at creation time (no pre-selection) so a new
+// credential starts at the least privilege its caller declares, instead of
+// "created full-access, narrowed later — if anyone remembers".
+const createScopeMode = ref<'' | 'full' | 'custom'>('');
+const createScopeBilling = ref(false);
+const createScopeMcp = ref(false);
+
 const reveal = ref(false);
 const revealName = ref('');
 const revealKey = ref('');
@@ -245,16 +252,32 @@ async function createConsumer() {
     formError.value = '请输入消费者名称。';
     return;
   }
+  if (createScopeMode.value === '') {
+    formError.value = '请选择能力作用域；只调 MCP 时选「自定义通道」并勾 mcp:call。';
+    return;
+  }
   submitting.value = true;
   formError.value = '';
+  // 'full' → null（= 全部通道，与 PATCH 的语义一致）；'custom' → 勾选的通道（全不勾 = 无通道）。
+  const capabilities =
+    createScopeMode.value === 'full'
+      ? null
+      : [
+          ...(createScopeBilling.value ? ['billing:read'] : []),
+          ...(createScopeMcp.value ? ['mcp:call'] : []),
+        ];
   try {
     const response = await api.createApiConsumer(
       createName.value.trim(),
       toIso(createExpiresAt.value),
+      capabilities,
     );
     creating.value = false;
     createName.value = '';
     createExpiresAt.value = '';
+    createScopeMode.value = '';
+    createScopeBilling.value = false;
+    createScopeMcp.value = false;
     revealName.value = response.consumer?.name ?? '';
     revealKey.value = response.apiKey ?? '';
     revealAcked.value = false;
@@ -365,15 +388,42 @@ onMounted(load);
             hint="到期后该消费者的请求将静默返回 401。"
             data-testid="consumer-create-expires"
           />
+          <div class="next-consumers__scope-field">
+            <p class="next-consumers__field-label">能力作用域（必选）</p>
+            <div class="next-consumers__scope-mode">
+              <UiRadio
+                v-model="createScopeMode"
+                value="full"
+                data-testid="consumer-create-scope-full"
+              >
+                全量（不裁剪）
+              </UiRadio>
+              <UiRadio
+                v-model="createScopeMode"
+                value="custom"
+                data-testid="consumer-create-scope-custom"
+              >
+                自定义通道
+              </UiRadio>
+            </div>
+            <div v-if="createScopeMode === 'custom'" class="next-consumers__scope-caps">
+              <UiCheckbox v-model="createScopeBilling" data-testid="consumer-create-scope-billing">
+                计费查询通道（billing:read）
+              </UiCheckbox>
+              <UiCheckbox v-model="createScopeMcp" data-testid="consumer-create-scope-mcp">
+                MCP 数据面通道（mcp:call）
+              </UiCheckbox>
+            </div>
+          </div>
           <p class="next-consumers__create-note" data-testid="consumer-create-scope-note">
-            新建的消费者<strong>未设作用域 = 全部通道</strong>（计费查询与 MCP
-            都放行）；创建后请用行内「作用域」收窄到最小权限。
+            「全量」= 计费查询与 MCP 都放行；只调 MCP 的 Agent 请选「自定义通道」并只勾 mcp:call。
           </p>
           <p v-if="formError" class="ui-form-error">{{ formError }}</p>
           <div class="next-consumers__actions">
             <UiButton
               variant="primary"
               :loading="submitting"
+              :disabled="createScopeMode === ''"
               data-testid="consumer-create-submit"
               @click="createConsumer"
             >
@@ -783,6 +833,19 @@ onMounted(load);
 .next-consumers__create-note {
   font-size: var(--ui-font-size-xs);
   color: var(--ui-foreground-secondary);
+  margin: 0;
+}
+
+.next-consumers__scope-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-space-2);
+}
+
+.next-consumers__field-label {
+  font-size: var(--ui-font-size-sm);
+  font-weight: var(--ui-weight-medium);
+  color: var(--ui-foreground);
   margin: 0;
 }
 
