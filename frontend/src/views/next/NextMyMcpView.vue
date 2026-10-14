@@ -385,6 +385,16 @@ onMounted(load);
             </div>
             <p v-if="svc.description" class="next-my-mcp__service-desc">{{ svc.description }}</p>
             <p class="ui-mono next-my-mcp__service-url">{{ svc.mcpUrl }}</p>
+            <!-- 服务级放行但工具级一条都没授权时（本机实测常见），只显示「0 个工具」
+                 会让人以为页面坏了：这里必须说清下一步找谁。 -->
+            <p
+              v-if="!(svc.tools ?? []).length"
+              class="next-my-mcp__service-hint"
+              data-testid="mcp-service-no-tools"
+            >
+              该服务下还没有授权给你任何工具——请管理员在「MCP 服务 →
+              访问控制」里为你的凭据授权后，工具会出现在这里。
+            </p>
             <ul
               v-if="expanded[svc.serviceId ?? '']"
               class="next-my-mcp__tools"
@@ -669,6 +679,12 @@ onMounted(load);
   color: var(--ui-text-2);
   font-size: var(--ui-font-size-sm);
   word-break: break-all;
+}
+
+.next-my-mcp__service-hint {
+  margin: var(--ui-space-2) 0 0;
+  color: var(--ui-text-3);
+  font-size: var(--ui-font-size-sm);
 }
 
 .next-my-mcp__tools {

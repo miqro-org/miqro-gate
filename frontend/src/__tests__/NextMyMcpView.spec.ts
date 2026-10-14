@@ -127,6 +127,23 @@ describe('NextMyMcpView', () => {
     await wrapper.find('[data-testid="mcp-service-tools-slurm-mcp-local"]').trigger('click');
     expect(wrapper.find('[data-testid="mcp-tool-check_job_status"]').exists()).toBe(true);
     expect(wrapper.find('[data-testid="mcp-tool-submit_slurm_job"]').exists()).toBe(true);
+    // 有工具时不出现「没授权」引导
+    expect(wrapper.find('[data-testid="mcp-service-no-tools"]').exists()).toBe(false);
+  });
+
+  it('explains the service-visible-but-no-tools case instead of only showing "0 个工具"', async () => {
+    // 服务级放行、工具级一条都没授权：实测最常见的一种「看起来像坏了」的状态。
+    mockApi.myMcpServices.mockResolvedValue(view({ services: [service({ tools: [] })] }));
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="mcp-service-slurm-mcp-local"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain('0 个工具');
+    const hint = wrapper.find('[data-testid="mcp-service-no-tools"]');
+    expect(hint.exists()).toBe(true);
+    expect(hint.text()).toContain('访问控制');
+    // 0 工具时不渲染「查看工具」开关
+    expect(wrapper.find('[data-testid="mcp-service-tools-slurm-mcp-local"]').exists()).toBe(false);
   });
 
   it('shows the upstream "no grants" answer as its own empty state (not "no data")', async () => {
