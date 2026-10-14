@@ -82,8 +82,8 @@ class MeMcpOnboardingIntegrationTest {
         }
         MvcResult boot = mockMvc
                 .perform(post("/api/v1/auth/bootstrap").contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(new BootstrapRequest(BootstrapHelper.secret(),
-                                "portal_admin", "Admin"))))
+                        .content(objectMapper.writeValueAsString(
+                                new BootstrapRequest(BootstrapHelper.secret(), "portal_admin", "Admin"))))
                 .andExpect(status().isCreated()).andReturn();
         adminSession = cookie(boot, "MIQROKEY_SESSION");
         adminCsrf = cookie(boot, "MIQROKEY_CSRF");
@@ -115,12 +115,12 @@ class MeMcpOnboardingIntegrationTest {
     void credentialLifecycle() throws Exception {
         UserSession user = createUser("alice");
 
-        mockMvc.perform(get("/api/v1/me/mcp-credential").cookie(user.session()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.issued").value(false));
+        mockMvc.perform(get("/api/v1/me/mcp-credential").cookie(user.session())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.issued").value(false));
 
         MvcResult issued = mockMvc
-                .perform(post("/api/v1/me/mcp-credential").cookie(user.session(), user.csrf())
-                        .header("X-CSRF-Token", user.csrfToken()))
+                .perform(post("/api/v1/me/mcp-credential").cookie(user.session(), user.csrf()).header("X-CSRF-Token",
+                        user.csrfToken()))
                 .andExpect(status().isCreated()).andExpect(jsonPath("$.shownOnce").value(true))
                 .andExpect(jsonPath("$.credential.name").value("alice@portal"))
                 .andExpect(jsonPath("$.credential.capabilities[0]").value("mcp:call")).andReturn();
@@ -129,7 +129,8 @@ class MeMcpOnboardingIntegrationTest {
         String credentialId = ((Map<?, ?>) issuedBody.get("credential")).get("consumerId").toString();
         assertThat(firstKey).startsWith("mqk_api_");
 
-        // It is a real consumer key, scoped to the MCP channel only: the billing channel rejects it.
+        // It is a real consumer key, scoped to the MCP channel only: the billing
+        // channel rejects it.
         mockMvc.perform(get("/api/v1/billing/summary").header("X-API-Key", firstKey)).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("CONSUMER_SCOPE_DENIED"));
 
@@ -139,17 +140,16 @@ class MeMcpOnboardingIntegrationTest {
                 .andExpect(jsonPath("$.keyPrefix").isNotEmpty());
 
         // A second issuance is refused — rotation is the way to get a new key.
-        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(user.session(), user.csrf())
-                .header("X-CSRF-Token", user.csrfToken())).andExpect(status().isConflict())
+        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(user.session(), user.csrf()).header("X-CSRF-Token",
+                user.csrfToken())).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("MCP_CREDENTIAL_ALREADY_ISSUED"));
 
-        // Rotate in place: same consumer row (so any ACL grants survive), new key material.
+        // Rotate in place: same consumer row (so any ACL grants survive), new key
+        // material.
         String digestBefore = jdbc.queryForObject("SELECT encode(key_digest, 'hex') FROM api_consumers WHERE id = :id",
                 new MapSqlParameterSource("id", UUID.fromString(credentialId)), String.class);
-        MvcResult rotated = mockMvc
-                .perform(post("/api/v1/me/mcp-credential/rotate").cookie(user.session(), user.csrf())
-                        .header("X-CSRF-Token", user.csrfToken()))
-                .andExpect(status().isOk()).andReturn();
+        MvcResult rotated = mockMvc.perform(post("/api/v1/me/mcp-credential/rotate").cookie(user.session(), user.csrf())
+                .header("X-CSRF-Token", user.csrfToken())).andExpect(status().isOk()).andReturn();
         String secondKey = (String) objectMapper.readValue(rotated.getResponse().getContentAsString(), Map.class)
                 .get("apiKey");
         assertThat(secondKey).isNotEqualTo(firstKey);
@@ -201,11 +201,12 @@ class MeMcpOnboardingIntegrationTest {
                 .andExpect(jsonPath("$.credential.issued").value(false))
                 .andExpect(jsonPath("$.services.length()").value(0)).andExpect(jsonPath("$.hint").isNotEmpty());
 
-        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(user.session(), user.csrf())
-                .header("X-CSRF-Token", user.csrfToken())).andExpect(status().isCreated());
-        // 'other' needs a consumer of their own to appear in an ALLOW list (grants have an FK to api_consumers).
-        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(other.session(), other.csrf())
-                .header("X-CSRF-Token", other.csrfToken())).andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(user.session(), user.csrf()).header("X-CSRF-Token",
+                user.csrfToken())).andExpect(status().isCreated());
+        // 'other' needs a consumer of their own to appear in an ALLOW list (grants have
+        // an FK to api_consumers).
+        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(other.session(), other.csrf()).header("X-CSRF-Token",
+                other.csrfToken())).andExpect(status().isCreated());
         UUID carolConsumer = consumerOf("carol");
         UUID daveConsumer = consumerOf("dave");
 
@@ -213,11 +214,12 @@ class MeMcpOnboardingIntegrationTest {
         mockMvc.perform(get("/api/v1/me/mcp-services").cookie(user.session())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.credential.issued").value(true))
                 .andExpect(jsonPath("$.services[0].name").value("slurm-mcp"))
-                .andExpect(jsonPath("$.services[0].mcpUrl").value(org.hamcrest.Matchers.containsString(
-                        "/mcpservers/slurm-mcp/mcp")))
+                .andExpect(jsonPath("$.services[0].mcpUrl")
+                        .value(org.hamcrest.Matchers.containsString("/mcpservers/slurm-mcp/mcp")))
                 .andExpect(jsonPath("$.services[0].tools.length()").value(2));
 
-        // Server ALLOW listing someone else → the service must disappear from the user's list.
+        // Server ALLOW listing someone else → the service must disappear from the
+        // user's list.
         setServerMode(serviceId, "ALLOW", List.of(daveConsumer));
         mockMvc.perform(get("/api/v1/me/mcp-services").cookie(user.session())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.services.length()").value(0)).andExpect(jsonPath("$.hint").isNotEmpty());
@@ -228,8 +230,10 @@ class MeMcpOnboardingIntegrationTest {
                 .andExpect(jsonPath("$.services.length()").value(1))
                 .andExpect(jsonPath("$.services[0].tools.length()").value(2));
 
-        // Tool-level overrides only exist while the server is open (mode NONE, #316 semantics):
-        // narrow toolA to someone else → it vanishes for carol, toolB (no override) stays.
+        // Tool-level overrides only exist while the server is open (mode NONE, #316
+        // semantics):
+        // narrow toolA to someone else → it vanishes for carol, toolB (no override)
+        // stays.
         setServerMode(serviceId, "NONE", List.of());
         setToolGrants(serviceId, toolA, "ALLOW", List.of(daveConsumer));
         mockMvc.perform(get("/api/v1/me/mcp-services").cookie(user.session())).andExpect(status().isOk())
@@ -255,8 +259,8 @@ class MeMcpOnboardingIntegrationTest {
         UUID serviceId = insertService("slurm-mcp");
         UUID tool = insertTool(serviceId, "list_partitions");
         UserSession alice = createUser("alice");
-        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(alice.session(), alice.csrf())
-                .header("X-CSRF-Token", alice.csrfToken())).andExpect(status().isCreated());
+        mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(alice.session(), alice.csrf()).header("X-CSRF-Token",
+                alice.csrfToken())).andExpect(status().isCreated());
         setServerMode(serviceId, "ALLOW", List.of(consumerOf("alice")));
 
         UserSession bob = createUser("bob");
@@ -266,14 +270,11 @@ class MeMcpOnboardingIntegrationTest {
         mockMvc.perform(get("/api/v1/me/mcp-services").cookie(bob.session())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.services.length()").value(0));
 
-        MvcResult bobIssued = mockMvc
-                .perform(post("/api/v1/me/mcp-credential").cookie(bob.session(), bob.csrf())
-                        .header("X-CSRF-Token", bob.csrfToken()))
-                .andExpect(status().isCreated()).andReturn();
+        MvcResult bobIssued = mockMvc.perform(post("/api/v1/me/mcp-credential").cookie(bob.session(), bob.csrf())
+                .header("X-CSRF-Token", bob.csrfToken())).andExpect(status().isCreated()).andReturn();
         String bobKey = (String) objectMapper.readValue(bobIssued.getResponse().getContentAsString(), Map.class)
                 .get("apiKey");
-        String aliceKey = jdbc.queryForObject(
-                "SELECT key_prefix FROM api_consumers WHERE owner_user_id = :owner",
+        String aliceKey = jdbc.queryForObject("SELECT key_prefix FROM api_consumers WHERE owner_user_id = :owner",
                 new MapSqlParameterSource("owner", alice.userId()), String.class);
         assertThat(bobKey).doesNotContain(aliceKey);
         // Still nothing for bob: the server list names alice's consumer only.
@@ -307,15 +308,16 @@ class MeMcpOnboardingIntegrationTest {
         String temp = (String) createdBody.get("temporaryPassword");
         UUID userId = UUID.fromString(((Map<?, ?>) createdBody.get("user")).get("id").toString());
 
-        MvcResult login = mockMvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(Map.of("username", username, "password", temp))))
+        MvcResult login = mockMvc
+                .perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("username", username, "password", temp))))
                 .andExpect(status().isOk()).andReturn();
         Cookie session = cookie(login, "MIQROKEY_SESSION");
         Cookie csrf = cookie(login, "MIQROKEY_CSRF");
         String csrfToken = csrf == null ? "" : csrf.getValue();
         // Forced password change clears the PASSWORD_CHANGE_REQUIRED gate on /me/*.
-        mockMvc.perform(post("/api/v1/auth/password").contentType(MediaType.APPLICATION_JSON)
-                .cookie(session, csrf).header("X-CSRF-Token", csrfToken)
+        mockMvc.perform(post("/api/v1/auth/password").contentType(MediaType.APPLICATION_JSON).cookie(session, csrf)
+                .header("X-CSRF-Token", csrfToken)
                 .content(objectMapper.writeValueAsString(new PasswordChangeRequest(temp, "UserSecurePass1!"))))
                 .andExpect(status().isOk());
         return new UserSession(session, csrf, csrfToken, userId);
@@ -362,11 +364,12 @@ class MeMcpOnboardingIntegrationTest {
     }
 
     private void setToolGrants(UUID serviceId, UUID toolId, String mode, List<UUID> consumerIds) throws Exception {
-        mockMvc.perform(put("/api/v1/admin/mcp-services/" + serviceId + "/access/grants")
-                .contentType(MediaType.APPLICATION_JSON).cookie(adminSession, adminCsrf)
-                .header("X-CSRF-Token", adminCsrfToken)
-                .content(objectMapper.writeValueAsString(Map.of("toolId", toolId.toString(), "mode", mode, "consumerIds",
-                        consumerIds.stream().map(UUID::toString).toList()))))
+        mockMvc.perform(
+                put("/api/v1/admin/mcp-services/" + serviceId + "/access/grants")
+                        .contentType(MediaType.APPLICATION_JSON).cookie(adminSession, adminCsrf)
+                        .header("X-CSRF-Token", adminCsrfToken)
+                        .content(objectMapper.writeValueAsString(Map.of("toolId", toolId.toString(), "mode", mode,
+                                "consumerIds", consumerIds.stream().map(UUID::toString).toList()))))
                 .andExpect(status().isOk());
     }
 
