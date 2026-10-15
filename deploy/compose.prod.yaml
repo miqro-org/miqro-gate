@@ -105,8 +105,12 @@ services:
       JAVA_TOOL_OPTIONS: "${CONTROL_PLANE_JAVA_OPTS:--Xmx448m -XX:MaxMetaspaceSize=192m -XX:+UseSerialGC -Xlog:gc*:file=/tmp/gc.log:time,uptime:filecount=2,filesize=5m -XX:+ExitOnOutOfMemoryError}"
       MIQROKEY_CONTROL_ADMIN_TRUSTED_PROXIES: ${MIQROKEY_CONTROL_ADMIN_TRUSTED_PROXIES:-172.28.0.0/24}
       MIQROKEY_CONTROL_ADMIN_IP_ALLOWLIST: ${MIQROKEY_CONTROL_ADMIN_IP_ALLOWLIST:-}
+      # #36：把网关证书交给门户用户下载（自签部署下客户端必须先信任它）。只挂证书，
+      # 绝不挂私钥；不设这个变量则页面不提供下载，退回原来的文字提示。
+      MIQROKEY_GATEWAY_TLS_CERT_FILE: /etc/miqrokey/certs/gateway.pem
     volumes:
       - secrets-store:/run/secrets:ro
+      - ./secrets/certs/fullchain.pem:/etc/miqrokey/certs/gateway.pem:ro
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
       interval: 15s

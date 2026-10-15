@@ -42,6 +42,10 @@ dist/
 # Exception: the catalog verification public key is not secret and ships with
 # the product (the private signing key never leaves the release environment).
 !backend/provider-adapters/src/main/resources/catalog/keys/catalog-public.pem
+# Exception: test-only certificate fixtures for the portal certificate export
+# (#36). Certificates are public material — clients receive them on every
+# connection — and the matching private keys were never generated into the tree.
+!backend/control-plane-app/src/test/resources/certificates/*.pem
 !deploy/compose.yaml
 
 # OS

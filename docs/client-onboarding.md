@@ -67,7 +67,7 @@ export ANTHROPIC_AUTH_TOKEN="mqk_live_…"
 
 1. **管理端拿接入信息**：「MCP 服务」页 → 目标服务行「接入信息」→ 复制 `streamableHttpUrl` 或 `sseUrl`（网关地址 + `/mcpservers/{service}/…` 形态）。普通用户不必走管理端：门户「我的 MCP 接入」页会列出**你已经有权使用**的服务及同一地址。
 2. **建消费者凭据**：在门户「我的 MCP 接入」页（`/app/my-mcp`）点一次「签发我的 MCP 凭据」即可——**用户可自助签发**，等价接口是 `POST /api/v1/me/mcp-credential`（一个用户一把，命名 `<用户名>@portal`，固定只开 `mcp:call`；页面上可轮换 `…/rotate`（原地换 Key 且保留授权）与撤销 `…/revoke`（幂等），详见 api-contract §4.7b）。管理员仍可在「API 消费者」页代为创建（外部系统那类走这条），能力作用域**显式加** **`mcp:call`**：⚠️ 不要依赖「不勾选就拒绝」——当前实现对**未设置作用域**的消费者按全放行处理（`ApiConsumer.allows()` 对 `null` 返回真），最小权限必须显式声明；详见 [`operations-runbook.md` §3f](operations-runbook.md)。**上游 MCP 的地址与后端 Key 全程不下发**，用户只用网关签发的凭据。
-3. **在封闭工具里改 MCP 配置**：把 MCP 服务器地址换为第 1 步的地址、凭据换为第 2 步的消费者 Key。⚠️ 若网关用的是**自签证书**（内网/本地部署常见），**客户端也要信任该 CA**，否则连接会停在证书校验失败——Node 内核的客户端（Claude Code / Claude Desktop）可在启动前设 `NODE_EXTRA_CA_CERTS=<网关证书或 CA>.pem`；换成受信证书后这一步不再需要。
+3. **在封闭工具里改 MCP 配置**：把 MCP 服务器地址换为第 1 步的地址、凭据换为第 2 步的消费者 Key。⚠️ 若网关用的是**自签证书**（内网/本地部署常见），**客户端也要信任该 CA**，否则连接会停在证书校验失败（`self signed certificate`）。**证书不用自己找**：登录门户 →「我的 MCP 接入」→「在客户端里使用」里有「**下载网关证书**」，下载后把文件路径填进 `NODE_EXTRA_CA_CERTS`（Node 内核的客户端如 Claude Code / Claude Desktop），再重启客户端；页面同时给出可直接复制的命令与证书指纹（便于核对）。换成受信证书的部署**不会出现**这个入口——那说明本部署无需此步。
 4. **验证**：MCP 服务页「立即验证」确认连通；真实调用后在「MCP 访问日志」按服务/消费者查看调用记录（含工具名、TTFB、结论）。
 
 > **服务侧前提**：第 1 步假定目标服务**已登记进注册表**。若上游是自建/自托管服务（自签证书、内网地址都算），登记步骤、网关侧三条硬要求与常见报错的归因见 [`operations-runbook.md` §3f](operations-runbook.md)。

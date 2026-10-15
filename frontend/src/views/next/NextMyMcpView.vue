@@ -24,6 +24,7 @@ import {
 import { MY_MCP_GUIDE } from '@/content/pageGuides';
 import { countWhenLoaded } from '@/utils/load-state';
 import type {
+  GatewayCertificateView,
   IssuedMcpCredential,
   McpCredentialView,
   MyMcpServiceView,
@@ -47,6 +48,24 @@ const scopeLabel = computed(() => {
   const caps = credential.value?.capabilities;
   return caps?.length ? caps.join(' · ') : '未设作用域（等于全权限）';
 });
+
+// ---- 网关证书（#36）：自签部署下客户端必须先信任它 ----
+const gatewayCert = ref<GatewayCertificateView | null>(null);
+/** 自签 → 用户必须先装它，页面给出下载与命令。 */
+const selfSignedCert = computed(
+  () => gatewayCert.value?.available === true && gatewayCert.value.selfSigned === true,
+);
+/** 受信任证书 → 用户什么都不用做，那句「先信任该 CA」的提示也就不该出现。 */
+const trustedCert = computed(
+  () => gatewayCert.value?.available === true && gatewayCert.value.selfSigned === false,
+);
+const certFileName = computed(() => gatewayCert.value?.fileName || 'miqrogate-ca.pem');
+/** 纯 ASCII 的命令块，方便直接复制；路径由用户在客户端侧替换。 */
+const certCommand = computed(
+  () =>
+    `# Windows PowerShell\n$env:NODE_EXTRA_CA_CERTS="C:\\path\\to\\${certFileName.value}"\n\n` +
+    `# macOS / Linux\nexport NODE_EXTRA_CA_CERTS="/path/to/${certFileName.value}"`,
+);
 
 // ---- 一次性明文（签发 / 轮换共用同一个弹窗） ----
 const revealOpen = ref(false);
@@ -220,7 +239,32 @@ function formatTime(iso?: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-onMounted(load);
+/**
+ * 证书拿不到就当没有：页面退回原来那句通用提示，不因为一个附加能力把整页拖红。
+ * 与主加载分开请求，互不阻塞。
+ */
+async function loadGatewayCert() {
+  try {
+    gatewayCert.value = await api.myGatewayCertificate();
+  } catch {
+    gatewayCert.value = null;
+  }
+}
+
+function downloadGatewayCert() {
+  if (!gatewayCert.value) return;
+  api.saveGatewayCertificate(gatewayCert.value);
+  toast.success('证书已下载，接着按下面的命令让客户端信任它');
+}
+
+function copyCertPem() {
+  return copyText(gatewayCert.value?.pem ?? '', '证书内容已复制');
+}
+
+onMounted(() => {
+  load();
+  loadGatewayCert();
+});
 </script>
 
 <template>
@@ -451,8 +495,39 @@ onMounted(load);
             把
             <span class="ui-mono">mqk_api_…</span>
             换成签发或轮换时展示的那串明文。上游 MCP
-            的地址与后端密钥全程不下发，客户端只用网关签发的凭据。网关使用自签证书时，客户端还要先信任该
-            CA——Node 内核的客户端可在启动前设
+            的地址与后端密钥全程不下发，客户端只用网关签发的凭据。
+          </p>
+
+          <!-- #36：自签部署下客户端必须先信任网关证书。以前只有一句"要信任该 CA"，
+               却没有任何地方能拿到那个文件——这里把证书直接给出去。 -->
+          <div v-if="selfSignedCert" class="next-my-mcp__cert" data-testid="mcp-cert-block">
+            <p class="next-my-mcp__cert-title">
+              这台网关用的是<strong>自签证书</strong>，客户端必须先信任它才能连上（否则会停在
+              <span class="ui-mono">self signed certificate</span>）。
+            </p>
+            <div class="next-my-mcp__snippet-actions">
+              <UiButton
+                variant="secondary"
+                data-testid="mcp-cert-download"
+                @click="downloadGatewayCert"
+              >
+                下载网关证书
+              </UiButton>
+              <UiButton variant="secondary" data-testid="mcp-cert-copy" @click="copyCertPem">
+                复制证书内容
+              </UiButton>
+            </div>
+            <div class="next-my-mcp__snippet" data-testid="mcp-cert-command">
+              <pre class="ui-mono">{{ certCommand }}</pre>
+            </div>
+            <p class="next-my-mcp__note">
+              把命令里的路径换成你实际保存证书的位置，设好后<strong>重启客户端</strong>。证书
+              SHA-256 指纹：<span class="ui-mono">{{ gatewayCert?.fingerprintSha256 }}</span>
+            </p>
+          </div>
+          <!-- 受信任证书的部署不出现上块，也不该再说"要先信任 CA"——那会凭空多出一步。 -->
+          <p v-else-if="!trustedCert" class="next-my-mcp__note" data-testid="mcp-cert-generic-hint">
+            网关若使用自签证书，客户端还需要先信任该 CA——Node 内核的客户端可在启动前设
             <span class="ui-mono">NODE_EXTRA_CA_CERTS=&lt;CA 证书&gt;.pem</span>。
           </p>
         </template>
@@ -737,6 +812,21 @@ onMounted(load);
   margin-top: var(--ui-space-3);
   display: flex;
   gap: var(--ui-space-2);
+}
+
+/* ---- 网关证书（#36） ---- */
+.next-my-mcp__cert {
+  margin-top: var(--ui-space-4);
+  padding: var(--ui-space-4);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface-2, var(--ui-card));
+}
+
+.next-my-mcp__cert-title {
+  margin: 0 0 var(--ui-space-3);
+  font-size: var(--ui-font-size-sm);
+  line-height: 1.7;
 }
 
 /* ---- 一次性明文 ---- */
