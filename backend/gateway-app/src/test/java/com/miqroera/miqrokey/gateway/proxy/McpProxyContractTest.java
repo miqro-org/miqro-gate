@@ -25,6 +25,8 @@ import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -400,6 +402,44 @@ class McpProxyContractTest {
         }
 
         @Test
+        @DisplayName("#34: a caller with no Accept preference still reaches the upstream with the one streamable-http requires")
+        void shouldDefaultAcceptWhenCallerSendsNone() {
+            // The SSE half of a standard MCP client POSTs without an Accept (its
+            // reply travels over the stream); WebTestClient's own default is `*/*`,
+            // which a strict streamable-http upstream rejects the same way. Both
+            // count as "no preference" and become the protocol pair.
+            webTestClient.post().uri("/mcpservers/{service}/mcp", GatewayTestKeys.MCP_OPEN_SERVICE)
+                    .header(HttpHeaders.AUTHORIZATION, bearer(GatewayTestKeys.MCP_OUTSIDER))
+                    .bodyValue(envelope("tools/list", null)).exchange().expectStatus().isOk();
+
+            assertThat(mockServer.capturedRequests()).hasSize(1);
+            assertThat(mockServer.capturedRequests().get(0).accept()).isEqualTo("application/json, text/event-stream");
+        }
+
+        @Test
+        @DisplayName("#34: a `*/*` Accept is normalized the same way (curl's default)")
+        void shouldNormalizeWildcardAccept() {
+            webTestClient.post().uri("/mcpservers/{service}/mcp", GatewayTestKeys.MCP_OPEN_SERVICE)
+                    .header(HttpHeaders.AUTHORIZATION, bearer(GatewayTestKeys.MCP_OUTSIDER))
+                    .header(HttpHeaders.ACCEPT, "*/*").bodyValue(envelope("tools/list", null)).exchange().expectStatus()
+                    .isOk();
+
+            assertThat(mockServer.capturedRequests().get(0).accept()).isEqualTo("application/json, text/event-stream");
+        }
+
+        @Test
+        @DisplayName("#34: an explicit caller Accept is still forwarded verbatim")
+        void shouldForwardExplicitAccept() {
+            webTestClient.post().uri("/mcpservers/{service}/mcp", GatewayTestKeys.MCP_OPEN_SERVICE)
+                    .header(HttpHeaders.AUTHORIZATION, bearer(GatewayTestKeys.MCP_OUTSIDER))
+                    .header(HttpHeaders.ACCEPT, "application/json").bodyValue(envelope("tools/list", null)).exchange()
+                    .expectStatus().isOk();
+
+            assertThat(mockServer.capturedRequests()).hasSize(1);
+            assertThat(mockServer.capturedRequests().get(0).accept()).isEqualTo("application/json");
+        }
+
+        @Test
         @DisplayName("should return the upstream response body byte-identical")
         void shouldEchoUpstreamBodyBytes() {
             String upstreamBody = "{\"jsonrpc\":\"2.0\",\"result\":{\"tools\":[{\"name\":\"echo-tool\"}]},\"id\":1}";
@@ -586,6 +626,30 @@ class McpProxyContractTest {
             return events.poll(timeout.toMillis(), TimeUnit.MILLISECONDS);
         }
 
+        /**
+         * Waits until the mock upstream has seen {@code count} requests: the POST only
+         * acknowledges with 202, the forward happens asynchronously, so an immediate
+         * assertion on captured requests races the dispatch.
+         */
+        private void awaitUpstreamCalls(int count) throws InterruptedException {
+            long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+            while (mockServer.capturedRequests().size() < count && System.nanoTime() < deadline) {
+                Thread.sleep(20);
+            }
+            assertThat(mockServer.capturedRequests()).hasSize(count);
+        }
+
+        /** Everything the stream delivers until it goes quiet for {@code gap}. */
+        private List<ServerSentEvent<String>> drain(BlockingQueue<ServerSentEvent<String>> events, Duration gap)
+                throws InterruptedException {
+            List<ServerSentEvent<String>> seen = new ArrayList<>();
+            ServerSentEvent<String> next;
+            while ((next = poll(events, gap)) != null) {
+                seen.add(next);
+            }
+            return seen;
+        }
+
         private String sessionIdOf(ServerSentEvent<String> endpointEvent) {
             assertThat(endpointEvent).isNotNull();
             assertThat(endpointEvent.event()).isEqualTo("endpoint");
@@ -649,6 +713,88 @@ class McpProxyContractTest {
 
                 assertThat(mockServer.capturedRequests()).hasSize(1);
                 assertThat(mockServer.capturedRequests().get(0).path()).isEqualTo("/mcp");
+            } finally {
+                subscription.dispose();
+            }
+        }
+
+        @Test
+        @DisplayName("#34: an upstream answering text/event-stream is unwrapped — the client gets the JSON-RPC payload, not a nested SSE frame")
+        void unwrapsUpstreamSseFraming() throws Exception {
+            // The shape a streamable-http upstream sends back: the reply is wrapped
+            // in the upstream's own `event:`/`data:` frame. Relaying that verbatim
+            // made the client parse `event: message\ndata: {…}` as the payload, so
+            // the JSON-RPC reply never arrived and every standard client timed out.
+            String rpc = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}";
+            mockServer.setResponseContentType("text/event-stream");
+            mockServer.setResponse("event: message\ndata: " + rpc + "\n\n", 200);
+            BlockingQueue<ServerSentEvent<String>> events = new LinkedBlockingQueue<>();
+            Disposable subscription = openStream(GatewayTestKeys.MCP_OPEN_SERVICE, GatewayTestKeys.MCP_OUTSIDER)
+                    .subscribe(events::add);
+            try {
+                String sessionId = sessionIdOf(poll(events, Duration.ofSeconds(5)));
+
+                postMessage(GatewayTestKeys.MCP_OPEN_SERVICE, sessionId, GatewayTestKeys.MCP_OUTSIDER,
+                        envelope("tools/list", null)).expectStatus().isAccepted();
+
+                ServerSentEvent<String> message = poll(events, Duration.ofSeconds(5));
+                assertThat(message).isNotNull();
+                assertThat(message.event()).isEqualTo("message");
+                assertThat(message.data()).isEqualTo(rpc);
+                assertThat(message.data()).isNotNull().doesNotContain("event: message");
+            } finally {
+                subscription.dispose();
+            }
+        }
+
+        @Test
+        @DisplayName("#34: upstream keep-alive comments carry no payload; a framed reply on the same session still arrives")
+        void upstreamKeepAliveCommentsAreNotRelayed() throws Exception {
+            mockServer.setResponseContentType("text/event-stream");
+            mockServer.setResponse(": ping\n\n", 200);
+            BlockingQueue<ServerSentEvent<String>> events = new LinkedBlockingQueue<>();
+            Disposable subscription = openStream(GatewayTestKeys.MCP_OPEN_SERVICE, GatewayTestKeys.MCP_OUTSIDER)
+                    .subscribe(events::add);
+            try {
+                String sessionId = sessionIdOf(poll(events, Duration.ofSeconds(5)));
+                postMessage(GatewayTestKeys.MCP_OPEN_SERVICE, sessionId, GatewayTestKeys.MCP_OUTSIDER,
+                        envelope("tools/list", null)).expectStatus().isAccepted();
+                awaitUpstreamCalls(1);
+                assertThat(drain(events, Duration.ofMillis(400))).noneMatch(event -> "message".equals(event.event()));
+
+                // Same session, framed reply this time: the message must arrive —
+                // which also proves the empty drain above was a real "nothing to
+                // relay", not a relay that never ran.
+                String rpc = "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{}}";
+                mockServer.setResponse("event: message\ndata: " + rpc + "\n\n", 200);
+                postMessage(GatewayTestKeys.MCP_OPEN_SERVICE, sessionId, GatewayTestKeys.MCP_OUTSIDER,
+                        envelope("tools/list", null)).expectStatus().isAccepted();
+
+                ServerSentEvent<String> message = poll(events, Duration.ofSeconds(5));
+                assertThat(message).isNotNull();
+                assertThat(message.event()).isEqualTo("message");
+                assertThat(message.data()).isEqualTo(rpc);
+            } finally {
+                subscription.dispose();
+            }
+        }
+
+        @Test
+        @DisplayName("#34: an empty upstream body (a notification's bare 202) relays no message event")
+        void emptyUpstreamBodyRelaysNothing() throws Exception {
+            // The SDK sends notifications/initialized right after initialize; the
+            // upstream answers 202 with no body. Emitting that as an empty `message`
+            // payload made standard clients fail with "Unexpected end of JSON input".
+            mockServer.setResponse("", 202);
+            BlockingQueue<ServerSentEvent<String>> events = new LinkedBlockingQueue<>();
+            Disposable subscription = openStream(GatewayTestKeys.MCP_OPEN_SERVICE, GatewayTestKeys.MCP_OUTSIDER)
+                    .subscribe(events::add);
+            try {
+                String sessionId = sessionIdOf(poll(events, Duration.ofSeconds(5)));
+                postMessage(GatewayTestKeys.MCP_OPEN_SERVICE, sessionId, GatewayTestKeys.MCP_OUTSIDER,
+                        "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}").expectStatus().isAccepted();
+                awaitUpstreamCalls(1);
+                assertThat(drain(events, Duration.ofMillis(400))).noneMatch(event -> "message".equals(event.event()));
             } finally {
                 subscription.dispose();
             }

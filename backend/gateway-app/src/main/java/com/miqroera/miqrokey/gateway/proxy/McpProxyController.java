@@ -108,6 +108,12 @@ public class McpProxyController {
     /** SSE keep-alive comment cadence (issue #356). */
     private static final Duration SSE_KEEP_ALIVE = Duration.ofSeconds(15);
 
+    /**
+     * The {@code Accept} a streamable-http upstream demands (MCP spec: the client
+     * MUST accept both). Used when the caller sent none — see {@link #forward}.
+     */
+    private static final String MCP_STREAMABLE_ACCEPT = "application/json, text/event-stream";
+
     private final RouteSnapshotProvider routeSnapshotProvider;
     private final WebClient proxyWebClient;
     private final ObjectMapper objectMapper;
@@ -375,9 +381,14 @@ public class McpProxyController {
         MediaType contentType = in.getHeaders().getContentType();
         headers.setContentType(contentType == null ? MediaType.APPLICATION_JSON : contentType);
         String accept = in.getHeaders().getFirst(HttpHeaders.ACCEPT);
-        if (accept != null) {
-            headers.set(HttpHeaders.ACCEPT, accept);
-        }
+        // #34: the SSE half of a standard MCP client does not send an Accept on
+        // its POST (the reply travels over the stream, so the POST's own Accept is
+        // meaningless to it), and plenty of HTTP clients send `*/*` by default —
+        // forwarding either made a streamable-http upstream answer 406 Not
+        // Acceptable. "No preference" therefore becomes what that transport
+        // requires; an explicit caller Accept is still forwarded verbatim.
+        headers.set(HttpHeaders.ACCEPT,
+                accept == null || accept.isBlank() || "*/*".equals(accept.trim()) ? MCP_STREAMABLE_ACCEPT : accept);
         String sessionId = in.getHeaders().getFirst("Session-Id");
         if (sessionId != null) {
             headers.set("Session-Id", sessionId);
@@ -677,10 +688,11 @@ public class McpProxyController {
     }
 
     /**
-     * SSE transport (issue #356): upstream bodies are relayed verbatim as one
-     * {@code message} event (streaming upstream SSE responses are aggregated —
-     * documented v1 limitation); gateway failures travel as {@code error} events
-     * with the same problem JSON as the direct path.
+     * SSE transport (issue #356): upstream bodies are relayed as {@code message}
+     * events (streaming upstream SSE responses are aggregated — documented v1
+     * limitation); gateway failures travel as {@code error} events with the same
+     * problem JSON as the direct path. An upstream that answers in its own SSE
+     * framing is unwrapped first (#34) — see {@link SseUpstreamFrames}.
      */
     private final class SseTarget implements ResponseTarget {
 
@@ -699,6 +711,7 @@ public class McpProxyController {
             // session gets an explicit error event; silently truncating would
             // corrupt the JSON-RPC reply the caller is waiting for.
             AtomicLong total = new AtomicLong();
+            String contentType = headers.getFirst(HttpHeaders.CONTENT_TYPE);
             return body.takeWhile(chunk -> total.addAndGet(chunk.length) <= maxMcpBodyBytes).collectList()
                     .doOnNext(chunks -> {
                         if (total.get() > maxMcpBodyBytes) {
@@ -706,7 +719,9 @@ public class McpProxyController {
                             session.emit(SseFrames.event("error", problemJson("mcp_sse_response_too_large",
                                     "Upstream response exceeds the SSE aggregation limit")));
                         } else {
-                            session.emit(SseFrames.event("message", join(chunks)));
+                            for (byte[] payload : SseUpstreamFrames.payloads(join(chunks), contentType)) {
+                                session.emit(SseFrames.event("message", payload));
+                            }
                         }
                     }).then();
         }

@@ -2,6 +2,18 @@
 
 > 此文件是跨 Claude Code/Goal 会话的最小交接状态。每个 Goal 开始和结束时必须更新。不要在这里复制完整设计；链接到事实来源。
 
+## 会话交接点 2026-10-15（MCP 的 SSE 面对标准客户端可用：#34）
+
+- **症状**：官方 MCP Inspector 与 MCP SDK 走 `/sse` 必然超时，走 `/mcp`（streamable）全通。curl 直连每一步（`endpoint` 事件、`202`）都「看着正常」——**只有真实客户端解析回推事件的 data 才暴露**，这正是 issue #1 验收里写「不接受只用手写 curl 或单元测试代替」的原因。
+- **根因是三处叠加**（只修一处客户端照样连不上，所以必须用真实客户端逐步验，不能靠读代码一次改完）：
+  1. **双层封装**：`SseTarget` 把上游响应体「原样」当作 `message` 事件的载荷，而上游是 streamable-http——它按规范要求调用方 `Accept: text/event-stream`，于是用它自己的 SSE 帧回包；客户端收到的 data 成了 `event: message\ndata: {…}` 这种 SSE 文本，JSON 解析失败、握手永远完不成。
+  2. **Accept 缺失被原样透传**：SSE 面的 POST 在标准客户端实现里**不带 `Accept`**（回包走流，POST 的 Accept 对它没有意义），而 `forward()` 是「有就透传」——上游于是回 **406 Not Acceptable**（网关访问日志实证：`initialize` 行 `http_status=406`）。
+  3. **空体被当成一条空消息**：`notifications/initialized` 上游回 `202` 空体，网关发出一个空 `message` → 客户端 `JSON.parse("")` 报 `Unexpected end of JSON input`。
+- **修法**：新增 `SseUpstreamFrames`（纯函数）：空体 → 什么都不发；按 `Content-Type` + 首行嗅探认出 SSE 帧就按 SSE 规范解出 `data` 载荷（多行 data 用 `\n` 连接、忽略注释与 `event:`/`id:`/`retry:`、容忍 CRLF 与末帧缺空行）逐条作为 `message` 下发；不是帧则**逐字节原样**（保持旧行为）；只声明 SSE 却没有帧（上游标错）时回退原样转发——解析出空绝不能把调用方等的回包丢掉。`forward()` 里把「无偏好」的 `Accept`（缺失 / 空 / `*/*`，后者是 curl 与部分客户端的默认值）补成 `application/json, text/event-stream`，显式值仍逐字透传。
+- **测试**：`SseUpstreamFramesTest` 12 例（单帧/多帧/多行 data/注释/CRLF/缺尾空行/空 data/嗅探/标错 Content-Type/空体不发/普通 JSON 透传）+ `McpProxyContractTest` 新增 5 例（带帧上游去封装端到端、仅 keep-alive 不回推、空体不回推、Accept 缺失与 `*/*` 归一、显式 Accept 透传）。**改前必红已验证**：临时退回旧行为时新用例失败。
+- **真实栈验收**：重建网关镜像 + 重启门户后，官方 **MCP SDK 客户端**走 SSE 完成 `initialize` → `tools/list`（8 个工具，与 ACL 一致）→ `tools/call get_pod_logs`（`isError:false`，真实结构化结果）；官方 **Inspector** 走 SSE 同样可用。
+- **夹具**：`McpMockServer` 新增 `setResponseContentType()` 与捕获请求的 `accept`（默认仍 `application/json`，`reset()` 复位）。
+
 ## 会话交接点 2026-10-14（门户「我的 MCP 接入」自助页：#32）
 
 - **接口有了、用户够不着**：#30 / PR #31 只做到 `/api/v1/me/mcp-*`，普通用户要拿凭据得自己 curl 并先从浏览器抠会话 cookie。本批补上用户可见面：普通导航组新增「我的 MCP 接入」（`/app/my-mcp`，`views/next/NextMyMcpView.vue`），三段 = 凭据 / 我可用的服务与工具 / 客户端配置片段。

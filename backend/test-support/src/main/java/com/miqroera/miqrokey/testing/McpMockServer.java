@@ -27,7 +27,7 @@ public final class McpMockServer implements AutoCloseable {
 
     /** One inbound request. */
     public record Request(String method, String path, String sessionId, String authorization, String xApiKey,
-            String contentType, byte[] body) {
+            String contentType, String accept, byte[] body) {
     }
 
     /** A scripted next response (retry/breaker scenarios). */
@@ -41,6 +41,7 @@ public final class McpMockServer implements AutoCloseable {
     private volatile byte[] responseBody = DEFAULT_RESPONSE.getBytes(StandardCharsets.UTF_8);
     private volatile int responseStatus = 200;
     private volatile long delayMillis;
+    private volatile String responseContentType = "application/json";
 
     public McpMockServer() {
         try {
@@ -64,6 +65,15 @@ public final class McpMockServer implements AutoCloseable {
         this.responseStatus = status;
     }
 
+    /**
+     * Response content type (default {@code application/json}). Scripted responses
+     * share it. Set to {@code text/event-stream} to exercise the upstream that
+     * answers in its own SSE framing (#34).
+     */
+    public void setResponseContentType(String contentType) {
+        this.responseContentType = contentType == null ? "application/json" : contentType;
+    }
+
     /** Scripts one response per upcoming request, consumed in FIFO order. */
     public void queueResponse(String body, int status) {
         scripted.add(new QueuedResponse(body, status));
@@ -81,6 +91,7 @@ public final class McpMockServer implements AutoCloseable {
         responseBody = DEFAULT_RESPONSE.getBytes(StandardCharsets.UTF_8);
         responseStatus = 200;
         delayMillis = 0;
+        responseContentType = "application/json";
     }
 
     public List<Request> capturedRequests() {
@@ -96,7 +107,8 @@ public final class McpMockServer implements AutoCloseable {
                 exchange.getRequestHeaders().getFirst("Session-Id"),
                 exchange.getRequestHeaders().getFirst("Authorization"),
                 exchange.getRequestHeaders().getFirst("x-api-key"),
-                exchange.getRequestHeaders().getFirst("Content-Type"), body));
+                exchange.getRequestHeaders().getFirst("Content-Type"), exchange.getRequestHeaders().getFirst("Accept"),
+                body));
         if (delayMillis > 0) {
             try {
                 Thread.sleep(delayMillis);
@@ -107,7 +119,7 @@ public final class McpMockServer implements AutoCloseable {
         QueuedResponse scriptedResponse = scripted.poll();
         byte[] out = scriptedResponse != null ? scriptedResponse.body().getBytes(StandardCharsets.UTF_8) : responseBody;
         int status = scriptedResponse != null ? scriptedResponse.status() : responseStatus;
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
+        exchange.getResponseHeaders().set("Content-Type", responseContentType);
         exchange.sendResponseHeaders(status, out.length);
         try (OutputStream os = exchange.getResponseBody()) {
             os.write(out);
