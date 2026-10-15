@@ -24,6 +24,7 @@ const NAV = [
   'usage',
   'skills',
   'model-approvals',
+  'my-mcp',
   'profile',
   'help',
 ] as const;

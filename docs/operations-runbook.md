@@ -62,7 +62,7 @@
    `["mcp:call"]`，别先建「全量」再补一步（漏了就放宽了）。事后调整用 `PATCH …/{id}/scope`
    （`null` = 全量、`[]` = 无通道）；越权调用计费面返回 `403 CONSUMER_SCOPE_DENIED`。
    省略 `capabilities` 仍是「全量」（向后兼容），所以**别把「没配」当成「已收紧」**。
-   **用户的 MCP 凭据走自助**（ADR-0028 选项 A，api-contract §4.7b）：`POST /api/v1/me/mcp-credential`
+   **用户的 MCP 凭据走自助**（ADR-0028 选项 A，api-contract §4.7b；界面在门户「我的 MCP 接入」页 `/app/my-mcp`）：`POST /api/v1/me/mcp-credential`
    一人一把（`<用户名>@portal`，固定 `["mcp:call"]`），轮换 `…/rotate`（原地换 Key、**授权保留**）、
    撤销 `…/revoke`（置 DISABLED，幂等）；管理员在「访问控制」里对着这个消费者授权即可。
 2. **到期**：创建时给 `expiresAt`（90 天等）成为常态；**到期即静默失效**（计费与网关 MCP 双面 401，

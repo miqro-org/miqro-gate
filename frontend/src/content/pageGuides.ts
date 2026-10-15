@@ -129,6 +129,27 @@ export const KEYS_GUIDE: PageGuideContent = {
   ],
 };
 
+/** ADR-0028 option A self-service MCP page (#32). */
+export const MY_MCP_GUIDE: PageGuideContent = {
+  title: '把 MCP 接进来三步',
+  steps: [
+    {
+      title: '签发凭据',
+      desc: '点「签发我的 MCP 凭据」：一人一把，命名与作用域（mcp:call）由平台固定，明文只显示这一次。',
+    },
+    {
+      title: '请管理员授权',
+      desc: '能用哪些服务与工具，由管理员在「MCP 服务 → 访问控制」里按你这条消费者授权；授权后本页列表自动出现。',
+    },
+    {
+      title: '把配置贴进客户端',
+      desc: '复制下面的接入地址与凭据填进客户端的 MCP 配置；网关用自签证书时，客户端还要先信任该 CA。',
+      docHref: `${DOCS}/client-onboarding.md`,
+      docText: '查看客户端接入文档',
+    },
+  ],
+};
+
 export const GRANTS_GUIDE: PageGuideContent = {
   title: '授权四步',
   steps: [

@@ -2,6 +2,15 @@
 
 > 此文件是跨 Claude Code/Goal 会话的最小交接状态。每个 Goal 开始和结束时必须更新。不要在这里复制完整设计；链接到事实来源。
 
+## 会话交接点 2026-10-14（门户「我的 MCP 接入」自助页：#32）
+
+- **接口有了、用户够不着**：#30 / PR #31 只做到 `/api/v1/me/mcp-*`，普通用户要拿凭据得自己 curl 并先从浏览器抠会话 cookie。本批补上用户可见面：普通导航组新增「我的 MCP 接入」（`/app/my-mcp`，`views/next/NextMyMcpView.vue`），三段 = 凭据 / 我可用的服务与工具 / 客户端配置片段。
+- **两条设计约束**：① 两种空态必须分开表达（「还没签发凭据」vs「已签发但管理员未授权」，说明文案直接用后端返回的 `hint`），不许合并成「暂无数据」；② 工具清单**完全跟随后端 ACL**，前端不做任何本地过滤——列表与数据面口径不一致即缺陷。
+- **轮换/撤销的差别要写在卡面上**：轮换是**原地换 Key**（消费者行不变，授权随之保留），撤销是置 DISABLED（可再签发或轮换恢复）；两个确认弹窗分别写明「旧 Key 立即失效、客户端要同步更新」与「授权仍在」。
+- **被两道既有守卫拦下（都是真问题，不是误报）**：`silent-clear-empty-states.spec.ts`（#1160）要求「暂无/还没有」类文案的门控里出现 Error/Loaded 谓词——原写法在读取失败时会断言「还没有签发凭据」，已改成 `!loadError &&` 分支（失败时只留页面顶部红条）；`list-counters.spec.ts`（#1120）要求计数行走 `countWhenLoaded()`——「共 N 个服务」在失败时显示 `—` 而不是 0。
+- **连带改动**：新导航项要被 5 个 shell 视图测试的导航白名单收录（`shell-nav-search` / `shell-nav-tooltip` / `shell-preferences` / `shell-route-feel` / `shell-tab-query`）；`types/generated-api.ts` 新增 5 个别名——`/me` 的 `McpServiceView`/`McpToolView` 与管理端既有别名**同名不同 schema**，故取 `MyMcpServiceView`/`MyMcpToolView`/`MyMcpServicesView`。
+- **测试**：`NextMyMcpView.spec.ts` 8 例（两种空态区分、签发后一次性明文与勾选门、轮换/撤销的确认门、配置片段含占位而非明文、加载失败带 requestId）；前端全量 86 文件 / 673 用例、lint、typecheck 全绿。
+
 ## 会话交接点 2026-09-20（配额水位的定价口径：#943）
 
 - **问题形态**：COST 配额水位取 `upstreamPaid`（只含已定价部分），未定价用量计 0 → 一条 `action=REJECT` 的成本封顶对这类用量**完全不起作用**，而水位一直显示 `NORMAL / 0%`。这是「未知被当成零」的运维后果，不是显示层瑕疵。
