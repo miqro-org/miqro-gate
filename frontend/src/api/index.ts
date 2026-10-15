@@ -29,6 +29,7 @@ import type {
   CredentialDetailView,
   CredentialView,
   ExportTask,
+  GatewayCertificateView,
   InternalServiceView,
   IssuedMcpCredential,
   McpAccessView,
@@ -209,6 +210,28 @@ export function rotateMyMcpCredential(): Promise<IssuedMcpCredential> {
 /** Disables the credential (idempotent); a later rotate brings it back ACTIVE. */
 export function revokeMyMcpCredential(): Promise<McpCredentialView> {
   return post<McpCredentialView>('/api/v1/me/mcp-credential/revoke');
+}
+
+// ---- gateway TLS certificate (#36) ----
+
+/**
+ * The certificate the gateway presents to clients. Self-signed deployments need
+ * it trusted locally before any MCP call can happen; `available=false` means the
+ * deployment did not expose one, so the page offers nothing.
+ */
+export function myGatewayCertificate(): Promise<GatewayCertificateView> {
+  return get<GatewayCertificateView>('/api/v1/me/gateway-certificate');
+}
+
+/** Saves the PEM the endpoint returned (the browser cannot fetch it as a file). */
+export function saveGatewayCertificate(view: GatewayCertificateView): void {
+  if (!view.pem) return;
+  const url = URL.createObjectURL(new Blob([view.pem], { type: 'application/x-pem-file' }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = view.fileName || 'miqrogate-ca.pem';
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 // ---- self-service model approvals (model-approval workflow) ----

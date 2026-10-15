@@ -368,8 +368,10 @@
 | `POST /api/v1/me/mcp-credential` | **首次签发** → `201` `{credential, apiKey, shownOnce:true}`（明文仅此一次）；已有凭据 → `409 MCP_CREDENTIAL_ALREADY_ISSUED` |
 | `POST /api/v1/me/mcp-credential/rotate` | **原地轮换**：同一消费者行（**ACL 授权保留**）、新密钥、状态回 `ACTIVE`（被撤销的凭据因此可复活）；未签发 → `404 MCP_CREDENTIAL_NOT_ISSUED` |
 | `POST /api/v1/me/mcp-credential/revoke` | **撤销**：消费者置 `DISABLED`（幂等） |
+| `GET /api/v1/me/gateway-certificate` | **网关证书**（#36）：`{available, pem, selfSigned, subject, issuer, fingerprintSha256, notAfter, fileName}`。自签部署下客户端必须先把这张证书加进信任名单，否则连接停在 TLS 校验（`self signed certificate`）——此前门户只告诉了用户「要信任该 CA」，却不提供文件。`available=false` = 该部署没配 `miqrokey.gateway-tls.cert-file`，页面据此不提供下载；`selfSigned=false` = 受信任证书，用户无需任何操作（页面同样不出现下载块）。**只下发证书，任何情况下都不含私钥。** |
 
 - **审计**：签发记 `CONSUMER_CREATE`（actor = 用户本人，detail 带 `ownerUserId`）、轮换记 `CONSUMER_KEY_ROTATE`、撤销记 `CONSUMER_DISABLE`。
+- **证书导出**（#36）：证书本身是**公开信息**（它本来就发给每一个来访客户端），所以在 `/me` 平面下发给登录用户没有额外暴露面；能导出什么由部署决定——`miqrokey.gateway-tls.cert-file` 指向哪张证书就发哪张，不配则不发。
 - **授权口径**：用户能调到什么，由管理员在「MCP 服务 → 访问控制」里**对该门户消费者**授权决定；所以签发之后还要管理员授权，服务才会出现在 `services[]`（`hint` 会写明下一步）。管理员页面上看到的就是名为 `<用户名>@portal` 的消费者。
 - **边界**：这几只接受**会话**（`/me/*` 平面），消费者 Key 访问不到；一个用户至多一条门户消费者（部分唯一索引，ADR §4 约束）；删除用户时其门户消费者与授权按外键级联清理。
 - 凭据与推理面 Virtual Key（`mqk_live_…`）**刻意不合并**：用途不同（推理面按项目/产品/凭证绑定），界面与文档都要讲清区别。

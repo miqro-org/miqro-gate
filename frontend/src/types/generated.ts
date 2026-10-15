@@ -1924,6 +1924,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/gateway-certificate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["certificate"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/billing/summary": {
         parameters: {
             query?: never;
@@ -3998,26 +4014,26 @@ export interface components {
             null?: boolean;
             float?: boolean;
             number?: boolean;
-            container?: boolean;
-            missingNode?: boolean;
-            object?: boolean;
-            pojo?: boolean;
-            short?: boolean;
             int?: boolean;
             long?: boolean;
-            binary?: boolean;
-            string?: boolean;
             double?: boolean;
+            boolean?: boolean;
             /** @deprecated */
             textual?: boolean;
-            boolean?: boolean;
+            binary?: boolean;
+            container?: boolean;
+            missingNode?: boolean;
             floatingPointNumber?: boolean;
-            valueNode?: boolean;
-            integralNumber?: boolean;
             bigInteger?: boolean;
+            valueNode?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            integralNumber?: boolean;
             bigDecimal?: boolean;
+            pojo?: boolean;
+            short?: boolean;
+            string?: boolean;
+            object?: boolean;
             embeddedValue?: boolean;
         };
         ImportResult: {
@@ -4660,6 +4676,16 @@ export interface components {
             code?: string;
             name?: string;
             projectTag?: string;
+        };
+        GatewayCertificateView: {
+            available?: boolean;
+            pem?: string;
+            selfSigned?: boolean;
+            subject?: string;
+            issuer?: string;
+            fingerprintSha256?: string;
+            notAfter?: string;
+            fileName?: string;
         };
         QuotaEntryView: {
             /** Format: uuid */
@@ -9234,6 +9260,26 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["MeGrantsResponse"];
+                };
+            };
+        };
+    };
+    certificate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["GatewayCertificateView"];
                 };
             };
         };

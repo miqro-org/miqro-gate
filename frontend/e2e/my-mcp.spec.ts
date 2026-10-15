@@ -45,6 +45,10 @@ const HINT_NOT_ISSUED =
 async function mockMeSurface(page: Page, initialIssued: boolean) {
   let issued = initialIssued;
   await page.route('**/api/v1/auth/me', (route) => route.fulfill({ json: USER }));
+  // #36: 默认当作"该部署没有可导出的证书"；证书用例自己覆盖这条。
+  await page.route('**/api/v1/me/gateway-certificate', (route) =>
+    route.fulfill({ json: { available: false } }),
+  );
   await page.route('**/api/v1/me/mcp-services', (route) =>
     route.fulfill({
       json: {
@@ -129,4 +133,31 @@ test('离开 /app/my-mcp 后下一个路由仍渲染（#1144 同类回归）', a
   expect(html).not.toBe('<!---->');
   expect(childCount).toBeGreaterThan(0);
   await expect(content.locator('h1').first()).toBeVisible();
+});
+
+test('#36: 自签部署给出可下载的网关证书与信任命令', async ({ page }) => {
+  await mockMeSurface(page, true);
+  // 覆盖默认的「没有证书」：这台网关是自签的
+  await page.route('**/api/v1/me/gateway-certificate', (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        pem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n',
+        selfSigned: true,
+        subject: 'CN=localhost',
+        issuer: 'CN=localhost',
+        fingerprintSha256: '4C:73:C5:83:C7:4F:36:66',
+        notAfter: '2029-01-15T09:22:04Z',
+        fileName: 'miqrogate-ca.pem',
+      },
+    }),
+  );
+
+  await page.goto('/app/my-mcp');
+  const block = page.getByTestId('mcp-cert-block');
+  await expect(block).toBeVisible();
+  await expect(block).toContainText('自签证书');
+  await expect(block).toContainText('4C:73:C5:83:C7:4F:36:66'); // 指纹可核对
+  await expect(page.getByTestId('mcp-cert-command')).toContainText('NODE_EXTRA_CA_CERTS');
+  await expect(page.getByTestId('mcp-cert-download')).toBeVisible();
 });

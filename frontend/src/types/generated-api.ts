@@ -83,6 +83,9 @@ export type MyMcpServiceView = components['schemas']['McpServiceView'];
 export type MyMcpToolView = components['schemas']['McpToolView'];
 export type McpCredentialView = components['schemas']['McpCredentialView'];
 export type IssuedMcpCredential = components['schemas']['IssuedCredential'];
+// #36: the gateway's own TLS certificate, handed to portal users so self-signed
+// deployments can be trusted locally instead of by guesswork.
+export type GatewayCertificateView = components['schemas']['GatewayCertificateView'];
 // auth envelope (issue #265): content schemas from springdoc annotations on
 // /api/v1/auth — LoginResponse/UserResponse previously had no schema at all.
 export type LoginResponse = components['schemas']['LoginResponse'];

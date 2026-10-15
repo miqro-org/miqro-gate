@@ -13,6 +13,8 @@ vi.mock('@/api', () => ({
   issueMyMcpCredential: vi.fn(),
   rotateMyMcpCredential: vi.fn(),
   revokeMyMcpCredential: vi.fn(),
+  myGatewayCertificate: vi.fn(),
+  saveGatewayCertificate: vi.fn(),
 }));
 
 const mockApi = vi.mocked(api);
@@ -99,6 +101,8 @@ describe('NextMyMcpView', () => {
     vi.resetAllMocks();
     document.body.innerHTML = '';
     Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    // 默认当作"没配置证书导出"：老用例不受影响，证书相关用例各自覆盖。
+    mockApi.myGatewayCertificate.mockResolvedValue({ available: false } as never);
   });
 
   function mountView() {
@@ -283,5 +287,79 @@ describe('NextMyMcpView', () => {
     const alert = wrapper.find('[data-testid="mcp-load-error"]');
     expect(alert.text()).toContain('数据库不可用');
     expect(alert.text()).toContain('req-500');
+  });
+
+  // ---- #36：自签部署要把网关证书交到用户手里 ----
+
+  const selfSigned = {
+    available: true,
+    pem: '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n',
+    selfSigned: true,
+    subject: 'CN=localhost',
+    issuer: 'CN=localhost',
+    fingerprintSha256: '60:BC:00:F9',
+    notAfter: '2046-10-10T04:04:34Z',
+    fileName: 'miqrogate-ca.pem',
+  };
+
+  it('#36 gives a self-signed deployment a download and the trust command', async () => {
+    mockApi.myMcpServices.mockResolvedValue(view());
+    mockApi.myGatewayCertificate.mockResolvedValue(selfSigned);
+    const wrapper = mountView();
+    await flushPromises();
+
+    const block = wrapper.find('[data-testid="mcp-cert-block"]');
+    expect(block.exists()).toBe(true);
+    expect(block.text()).toContain('自签证书');
+    expect(block.text()).toContain('60:BC:00:F9'); // 指纹可核对
+    const command = wrapper.find('[data-testid="mcp-cert-command"]').text();
+    expect(command).toContain('NODE_EXTRA_CA_CERTS');
+    expect(command).toContain('miqrogate-ca.pem');
+    // 给了可执行的方案，就不再重复那句没有出处的通用提示
+    expect(wrapper.find('[data-testid="mcp-cert-generic-hint"]').exists()).toBe(false);
+
+    await wrapper.find('[data-testid="mcp-cert-download"]').trigger('click');
+    expect(mockApi.saveGatewayCertificate).toHaveBeenCalledWith(
+      expect.objectContaining({ fileName: 'miqrogate-ca.pem', selfSigned: true }),
+    );
+  });
+
+  it('#36 stays silent on a publicly trusted certificate (nothing for the user to do)', async () => {
+    mockApi.myMcpServices.mockResolvedValue(view());
+    mockApi.myGatewayCertificate.mockResolvedValue({
+      ...selfSigned,
+      selfSigned: false,
+      issuer: 'CN=some-public-ca',
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="mcp-cert-block"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="mcp-cert-generic-hint"]').exists()).toBe(false);
+  });
+
+  it('#36 falls back to the generic hint when the portal has no certificate to give', async () => {
+    mockApi.myMcpServices.mockResolvedValue(view());
+    mockApi.myGatewayCertificate.mockResolvedValue({ available: false } as never);
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="mcp-cert-block"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="mcp-cert-generic-hint"]').text()).toContain(
+      'NODE_EXTRA_CA_CERTS',
+    );
+    // 证书只是附加能力：拿不到时页面其余部分照常
+    expect(wrapper.find('[data-testid="mcp-credential-name"]').text()).toBe('selfmcp@portal');
+  });
+
+  it('#36 a failed certificate call never breaks the page', async () => {
+    mockApi.myMcpServices.mockResolvedValue(view());
+    mockApi.myGatewayCertificate.mockRejectedValue(new Error('boom'));
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(wrapper.find('[data-testid="mcp-cert-block"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="mcp-load-error"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="mcp-credential-name"]').text()).toBe('selfmcp@portal');
   });
 });
